@@ -16,7 +16,7 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
-// note formatting: body font family
+// note page formatting: body font family
 export const noteFontValidator = v.union(
   v.literal("sans"),
   v.literal("serif"),
@@ -25,7 +25,7 @@ export const noteFontValidator = v.union(
 );
 export type NoteFont = Infer<typeof noteFontValidator>;
 
-// note formatting: accent color
+// note page formatting: notebook color label
 export const noteColorValidator = v.union(
   v.literal("default"),
   v.literal("indigo"),
@@ -35,6 +35,17 @@ export const noteColorValidator = v.union(
   v.literal("sky"),
 );
 export type NoteColor = Infer<typeof noteColorValidator>;
+
+// note page formatting: ink (text) color
+export const noteInkValidator = v.union(
+  v.literal("default"),
+  v.literal("indigo"),
+  v.literal("emerald"),
+  v.literal("amber"),
+  v.literal("rose"),
+  v.literal("sky"),
+);
+export type NoteInk = Infer<typeof noteInkValidator>;
 
 const schema = defineSchema(
   {
@@ -59,15 +70,26 @@ const schema = defineSchema(
       isCompleted: v.boolean(), // false until the task is checked off
     }).index("by_owner", ["ownerId"]),
 
-    // the student's notes. one row per note.
-    notes: defineTable({
-      ownerId: v.id("users"), // the author of the note
+    // notebooks: the top level of the notes workspace (OneNote-style)
+    notebooks: defineTable({
+      ownerId: v.id("users"),
+      title: v.string(),
+    }).index("by_owner", ["ownerId"]),
+
+    // pages inside a notebook; rendered like sheets of paper
+    notePages: defineTable({
+      ownerId: v.id("users"),
+      notebookId: v.id("notebooks"),
       title: v.string(),
       body: v.string(),
-      numbered: v.optional(v.boolean()), // render body lines with numbers
+      numbered: v.optional(v.boolean()), // number each line of the body
       font: v.optional(noteFontValidator), // body font family
-      color: v.optional(noteColorValidator), // accent color
-    }).index("by_owner", ["ownerId"]),
+      color: v.optional(noteColorValidator), // notebook color label
+      inkColor: v.optional(noteInkValidator), // text (ink) color
+      order: v.optional(v.number()), // manual page order within the notebook
+    })
+      .index("by_owner", ["ownerId"])
+      .index("by_notebook", ["notebookId"]),
 
     // add other tables here
 
