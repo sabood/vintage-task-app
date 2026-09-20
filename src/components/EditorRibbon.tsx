@@ -107,8 +107,6 @@ export default function EditorRibbon({
   onPersist,
   savedLabel,
   onFlag,
-  numbered,
-  onToggleNumbered,
   accent,
   onAccent,
   drawMode,
@@ -123,8 +121,6 @@ export default function EditorRibbon({
   onPersist: () => void;
   savedLabel: string;
   onFlag: () => void;
-  numbered: boolean;
-  onToggleNumbered: () => void;
   accent: NoteColor;
   onAccent: (c: NoteColor) => void;
   drawMode: boolean;
@@ -356,23 +352,6 @@ export default function EditorRibbon({
         >
           <Flag className="size-3.5" />
           Flag
-        </button>
-
-        {/* line numbering (page-level) */}
-        <button
-          type="button"
-          aria-pressed={numbered}
-          className={cn(
-            "flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors",
-            numbered
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={onToggleNumbered}
-        >
-          <ListOrdered className="size-3.5" />
-          Numbering
         </button>
 
         {/* notebook accent (page-level) */}

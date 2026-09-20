@@ -33,6 +33,7 @@ import {
   Plus,
   StickyNote,
   Eraser,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
@@ -228,12 +229,6 @@ function PageCanvas({
         }}
         savedLabel={savedTick > 0 ? "Saved ✓" : "Autosaves as you type"}
         onFlag={handleFlagSelection}
-        numbered={numbered}
-        onToggleNumbered={() => {
-          const next = !numbered;
-          setNumbered(next);
-          scheduleSave({ numbered: next });
-        }}
         accent={accent}
         onAccent={(c) => {
           setAccent(c);
@@ -372,6 +367,20 @@ function PageCanvas({
               onClick={() => handleDrawingChange([])}
             >
               Clear
+            </Button>
+
+            {/* close drawing mode */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Close drawing mode"
+              title="Close drawing mode"
+              className="ml-auto h-7 rounded-lg"
+              onClick={() => setDrawMode(false)}
+            >
+              <X className="size-3.5" />
+              Close
             </Button>
           </div>
         )}
