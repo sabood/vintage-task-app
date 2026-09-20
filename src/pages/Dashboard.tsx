@@ -347,10 +347,14 @@ export default function Dashboard() {
             <NotesPanel
               activePage={activePage}
               pages={pageList}
+              notebooks={nbList}
+              activeNotebookId={notebookId}
               pagesLoading={pages === undefined}
+              onSelectNotebook={handleSelectNotebook}
+              onSelectPage={(pageId) => setActivePageId(pageId)}
               onNewPage={() => handleNewPage()}
               onNewSubPage={(parentId) => handleNewPage(parentId)}
-              onSelectPage={(pageId) => setActivePageId(pageId)}
+              onNewNotebook={handleNewNotebook}
               onFlagTask={handleFlagTask}
             />
           )}

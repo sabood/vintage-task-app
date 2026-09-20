@@ -30,6 +30,7 @@ import {
   Underline,
   Undo2,
   Flag,
+  Image as ImageIcon,
   PencilLine,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -127,6 +128,8 @@ export default function EditorRibbon({
   onAccent,
   drawMode,
   onToggleDraw,
+  imageMode,
+  onToggleImage,
 }: {
   state: FormatState;
   blockTag: string;
@@ -141,6 +144,8 @@ export default function EditorRibbon({
   onAccent: (c: NoteColor) => void;
   drawMode: boolean;
   onToggleDraw: () => void;
+  imageMode: boolean;
+  onToggleImage: () => void;
 }) {
   const [family, setFamily] = useState(FONT_FAMILIES[0].label);
   const [size, setSize] = useState(16);
@@ -469,6 +474,23 @@ export default function EditorRibbon({
         >
           <PencilLine className="size-3.5" />
           Draw
+        </button>
+
+        {/* image mode toggle */}
+        <button
+          type="button"
+          aria-pressed={imageMode}
+          title="Insert and edit images"
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors",
+            imageMode
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+          onClick={onToggleImage}
+        >
+          <ImageIcon className="size-3.5" />
+          Picture
         </button>
       </div>
     </div>

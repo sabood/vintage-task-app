@@ -97,6 +97,7 @@ const schema = defineSchema(
       body: v.string(),
       parentId: v.optional(v.id("notePages")), // set when this is a sub-page
       drawing: v.optional(v.string()), // ink strokes as JSON (normalized coords)
+      images: v.optional(v.string()), // placed images as JSON (src, pos, crop)
       numbered: v.optional(v.boolean()), // number each line of the body
       font: v.optional(noteFontValidator), // body font family
       color: v.optional(noteColorValidator), // notebook color label

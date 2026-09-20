@@ -19,7 +19,15 @@ import {
   parseStrokes,
 } from "@/components/DrawingCanvas";
 import {
+  ImageLayer,
+  parseImages,
+} from "@/components/ImageLayer";
+import {
+  ChevronsLeft,
+  FileText,
+  Image as ImageIcon,
   Loader2,
+  Notebook,
   PencilLine,
   Plus,
   StickyNote,
@@ -29,22 +37,8 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+type NotebookId = Id<"notebooks">;
 type PageId = Id<"notePages">;
-
-// (accent palette lives in EditorRibbon now)
-
-const ACCENT_CLASS: Record<NoteColor, string> = {
-  default: "note-default",
-  indigo: "note-indigo",
-  violet: "note-violet",
-  sky: "note-sky",
-  teal: "note-teal",
-  emerald: "note-emerald",
-  amber: "note-amber",
-  orange: "note-orange",
-  rose: "note-rose",
-  pink: "note-pink",
-};
 
 const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
   default: "bg-muted-foreground/60",
@@ -59,87 +53,69 @@ const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
   pink: "bg-pink-500",
 };
 
+const ACCENT_CLASS: Record<NoteColor, string> = {
+  default: "note-default",
+  indigo: "note-indigo",
+  violet: "note-violet",
+  sky: "note-sky",
+  teal: "note-teal",
+  emerald: "note-emerald",
+  amber: "note-amber",
+  orange: "note-orange",
+  rose: "note-rose",
+  pink: "note-pink",
+};
+
 /* ──────────────────────────────────────────────────────────────────────── */
-/* Right-edge index tabs (notebook spine style, like the reference image)   */
+/* OneNote-style column strip: Notebooks ▸ Pages ▸ Sub-pages                */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-const TAB_TINTS: { chip: string; text: string }[] = [
-  { chip: "bg-rose-500", text: "text-white" },
-  { chip: "bg-amber-500", text: "text-white" },
-  { chip: "bg-emerald-500", text: "text-white" },
-  { chip: "bg-sky-500", text: "text-white" },
-  { chip: "bg-indigo-500", text: "text-white" },
-  { chip: "bg-fuchsia-500", text: "text-white" },
-];
-
-function NotebookIndexTabs({
-  pages,
-  activePageId,
-  onSelect,
+function ColumnHeader({
+  children,
   onAdd,
 }: {
-  pages: Doc<"notePages">[];
-  activePageId: PageId | null;
-  onSelect: (id: PageId) => void;
-  onAdd: () => void;
+  children: React.ReactNode;
+  onAdd?: () => void;
 }) {
-  const topLevel = pages.filter((p) => !p.parentId);
   return (
-    <div className="pointer-events-none absolute top-0 -right-3 bottom-0 z-20 hidden items-center lg:flex">
-      <div className="pointer-events-auto flex flex-col gap-1">
-        {topLevel.slice(0, 8).map((page, i) => {
-          const active = activePageId === page._id;
-          const tint = TAB_TINTS[i % TAB_TINTS.length];
-          return (
-            <button
-              key={page._id}
-              type="button"
-              onClick={() => onSelect(page._id)}
-              title={page.title}
-              className={cn(
-                "group flex h-11 w-9 items-center justify-center rounded-l-lg border border-r-0 shadow-sm transition-all",
-                tint.chip,
-                tint.text,
-                active
-                  ? "w-11 brightness-110"
-                  : "opacity-80 hover:w-11 hover:opacity-100",
-              )}
-            >
-              <span className="rotate-180 text-[10px] font-bold tracking-widest [writing-mode:vertical-rl]">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-            </button>
-          );
-        })}
+    <div className="flex items-center justify-between border-b border-border/60 px-2.5 py-1.5">
+      <span className="truncate text-[11px] font-semibold tracking-widest text-muted-foreground/80 uppercase">
+        {children}
+      </span>
+      {onAdd && (
         <button
           type="button"
+          aria-label="Add"
+          className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={onAdd}
-          title="New page"
-          className="flex h-9 w-9 items-center justify-center rounded-l-lg border border-r-0 bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
         >
-          <Plus className="size-4" />
+          <Plus className="size-3.5" />
         </button>
-      </div>
+      )}
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────── */
-/* Page + sub-page tabs (horizontal, above the ribbon)                      */
-/* ──────────────────────────────────────────────────────────────────────── */
-
-function PageTabs({
+function NotebookColumns({
+  notebooks,
+  activeNotebookId,
   pages,
   activePage,
-  onSelect,
-  onAddTopLevel,
-  onAddSubPage,
+  onSelectNotebook,
+  onSelectPage,
+  onNewPage,
+  onNewSubPage,
+  onNewNotebook,
 }: {
+  notebooks: Doc<"notebooks">[];
+  activeNotebookId: NotebookId | null;
   pages: Doc<"notePages">[];
   activePage: Doc<"notePages"> | null;
-  onSelect: (id: PageId) => void;
-  onAddTopLevel: () => void;
-  onAddSubPage: (parentId: PageId) => void;
+  onSelectNotebook: (id: NotebookId) => void;
+  onSelectPage: (id: PageId) => void;
+  onNewPage: () => void;
+  onNewSubPage: (parentId: PageId) => void;
+  onNewNotebook: () => void;
 }) {
   const topLevel = pages.filter((p) => !p.parentId);
   const subPages = activePage
@@ -147,104 +123,137 @@ function PageTabs({
     : [];
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-stretch gap-1 overflow-x-auto rounded-xl border bg-muted/40 p-1">
-        {topLevel.map((page) => {
-          const active = activePage?._id === page._id;
-          return (
-            <button
-              key={page._id}
-              type="button"
-              onClick={() => onSelect(page._id)}
-              className={cn(
-                "flex max-w-48 shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
-                active
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
-              )}
-            >
-              <span
-                className={`size-2 shrink-0 rounded-full ${ACCENT_DOT_CLASS[page.color ?? "default"]}`}
-                aria-hidden
-              />
-              <span className="truncate">{page.title}</span>
-              {pages.some((p) => p.parentId === page._id) && (
-                <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
-                  +{pages.filter((p) => p.parentId === page._id).length}
-                </span>
-              )}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={onAddTopLevel}
-          aria-label="New page"
-          title="New page"
-          className="grid w-9 shrink-0 place-items-center rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Plus className="size-4" />
-        </button>
+    <div className="flex overflow-hidden rounded-xl border bg-card shadow-sm">
+      {/* column 1: notebooks */}
+      <div className="w-40 shrink-0 border-r border-border/60">
+        <ColumnHeader onAdd={onNewNotebook}>Notebooks</ColumnHeader>
+        <div className="max-h-52 overflow-y-auto p-1">
+          {notebooks.map((nb) => {
+            const active = nb._id === activeNotebookId;
+            return (
+              <button
+                key={nb._id}
+                type="button"
+                onClick={() => onSelectNotebook(nb._id)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                  active
+                    ? "bg-primary/10 font-medium text-primary"
+                    : "text-foreground/80 hover:bg-accent",
+                )}
+              >
+                <Notebook className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
+                <span className="truncate">{nb.title}</span>
+              </button>
+            );
+          })}
+          {notebooks.length === 0 && (
+            <p className="px-2 py-2 text-xs text-muted-foreground">None yet.</p>
+          )}
+        </div>
       </div>
 
-      {activePage && (
-        <div className="ml-12 flex items-stretch gap-1 overflow-x-auto rounded-lg border border-border/60 bg-muted/20 p-0.5">
-          <span className="flex shrink-0 items-center px-2 text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-            Sub-pages
-          </span>
-          {subPages.map((page) => {
-            const active = activePage._id === page._id;
+      {/* column 2: pages */}
+      <div className="w-44 shrink-0 border-r border-border/60">
+        <ColumnHeader onAdd={onNewPage}>Pages</ColumnHeader>
+        <div className="max-h-52 overflow-y-auto p-1">
+          {topLevel.map((page) => {
+            const active = activePage?._id === page._id;
             return (
               <button
                 key={page._id}
                 type="button"
-                onClick={() => onSelect(page._id)}
+                onClick={() => onSelectPage(page._id)}
                 className={cn(
-                  "flex max-w-40 shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors",
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
                   active
-                    ? "border-primary/30 bg-card text-foreground shadow-sm"
-                    : "border-transparent bg-transparent hover:bg-card/70 hover:text-foreground",
+                    ? "bg-primary/10 font-medium text-primary"
+                    : "text-foreground/80 hover:bg-accent",
                 )}
               >
                 <span
-                  className={`size-1.5 shrink-0 rounded-full ${ACCENT_DOT_CLASS[page.color ?? "default"]}`}
+                  className={cn("size-2 shrink-0 rounded-full", ACCENT_DOT_CLASS[page.color ?? "default"])}
                   aria-hidden
                 />
                 <span className="truncate">{page.title}</span>
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => onAddSubPage(activePage._id)}
-            className="flex shrink-0 items-center gap-0.5 rounded-md px-2 py-0.5 text-xs text-muted-foreground/70 transition-colors hover:text-foreground"
-          >
-            <Plus className="size-3" />
-            Sub-page
-          </button>
+          {topLevel.length === 0 && (
+            <p className="px-2 py-2 text-xs text-muted-foreground">No pages.</p>
+          )}
         </div>
-      )}
+      </div>
+
+      {/* column 3: sub-pages */}
+      <div className="min-w-0 flex-1">
+        <ColumnHeader onAdd={activePage ? () => onNewSubPage(activePage._id) : undefined}>
+          Sub-pages
+        </ColumnHeader>
+        <div className="max-h-52 overflow-y-auto p-1">
+          {activePage ? (
+            <>
+              {subPages.map((page) => {
+                const active = activePage._id === page._id;
+                return (
+                  <button
+                    key={page._id}
+                    type="button"
+                    onClick={() => onSelectPage(page._id)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left text-xs transition-colors pl-5",
+                      active
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                    )}
+                  >
+                    <FileText className="size-3 shrink-0 opacity-60" />
+                    <span className="truncate">{page.title}</span>
+                  </button>
+                );
+              })}
+              {subPages.length === 0 && (
+                <p className="px-2 py-2 text-xs text-muted-foreground">
+                  No sub-pages in this page.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="px-2 py-2 text-xs text-muted-foreground">
+              Select a page first.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
-/* Page canvas: ribbon above, paper below, drawing + flag inside            */
+/* Page canvas: ribbon, columns, paper, drawing + images                    */
 /* ──────────────────────────────────────────────────────────────────────── */
 
 function PageCanvas({
   page,
   pages,
+  notebooks,
+  activeNotebookId,
+  onSelectNotebook,
   onSelectPage,
   onNewPage,
   onNewSubPage,
+  onNewNotebook,
   onFlagTask,
 }: {
   page: Doc<"notePages">;
   pages: Doc<"notePages">[];
+  notebooks: Doc<"notebooks">[];
+  activeNotebookId: NotebookId | null;
+  onSelectNotebook: (id: NotebookId) => void;
   onSelectPage: (id: PageId) => void;
   onNewPage: () => void;
   onNewSubPage: (parentId: PageId) => void;
+  onNewNotebook: () => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
 }) {
   const updatePage = useMutation(api.notebooks.updatePage);
@@ -273,10 +282,14 @@ function PageCanvas({
   const [penWidth, setPenWidth] = useState(PEN_SIZES[1].width);
   const [strokes, setStrokes] = useState(() => parseStrokes(page.drawing));
 
+  const [imageMode, setImageMode] = useState(false);
+  const [images, setImages] = useState(() => parseImages(page.images));
+
   const scheduleSave = (patch: {
     title?: string;
     body?: string;
     drawing?: string;
+    images?: string;
     numbered?: boolean;
     color?: NoteColor;
   }) => {
@@ -358,10 +371,14 @@ function PageCanvas({
     scheduleSave({ drawing: JSON.stringify(next) });
   };
 
+  const handleImagesChange = (next: typeof images) => {
+    setImages(next);
+    scheduleSave({ images: JSON.stringify(next) });
+  };
+
   return (
     <div className="flex flex-1 flex-col gap-3">
       {/* Word-style ribbon — OUTSIDE and ABOVE the paper, sticky */}
-      {/* (page + sub-page tabs sit right below it) */}
       <EditorRibbon
         state={formatState}
         blockTag={blockTag}
@@ -384,28 +401,34 @@ function PageCanvas({
           scheduleSave({ color: c });
         }}
         drawMode={drawMode}
-        onToggleDraw={() => setDrawMode(!drawMode)}
+        onToggleDraw={() => {
+          setDrawMode(!drawMode);
+          if (!drawMode) setImageMode(false);
+        }}
+        imageMode={imageMode}
+        onToggleImage={() => {
+          setImageMode(!imageMode);
+          if (!imageMode) setDrawMode(false);
+        }}
       />
 
-      {/* page + sub-page tabs BELOW the modifier ribbon */}
-      <PageTabs
+      {/* OneNote-style columns: Notebooks ▸ Pages ▸ Sub-pages */}
+      <NotebookColumns
+        notebooks={notebooks}
+        activeNotebookId={activeNotebookId}
         pages={pages}
         activePage={page}
-        onSelect={onSelectPage}
-        onAddTopLevel={onNewPage}
-        onAddSubPage={onNewSubPage}
+        onSelectNotebook={onSelectNotebook}
+        onSelectPage={onSelectPage}
+        onNewPage={onNewPage}
+        onNewSubPage={onNewSubPage}
+        onNewNotebook={onNewNotebook}
       />
 
-      {/* paper with right-edge index tabs */}
+      {/* paper */}
       <div
         className={`${ACCENT_CLASS[accent]} note-card relative min-h-[32rem] flex-1 rounded-2xl border bg-card shadow-sm`}
       >
-        <NotebookIndexTabs
-          pages={pages}
-          activePageId={page._id}
-          onSelect={onSelectPage}
-          onAdd={onNewPage}
-        />
         {/* draw toolbar */}
         {drawMode && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2">
@@ -469,7 +492,24 @@ function PageCanvas({
           </div>
         )}
 
+        {/* image-mode hint */}
+        {imageMode && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-semibold uppercase">
+              <ImageIcon className="size-3.5" />
+              Images
+            </span>
+            <span>Drag images to move · corner handle to resize · amber handle to crop · × to remove</span>
+          </div>
+        )}
+
         <div className="relative flex min-h-0 flex-col px-4 py-4 sm:px-10">
+          <ImageLayer
+            images={images}
+            onChange={handleImagesChange}
+            active={imageMode}
+            onActiveChange={setImageMode}
+          />
           <DrawingCanvas
             strokes={strokes}
             onChange={handleDrawingChange}
@@ -477,7 +517,7 @@ function PageCanvas({
             penColor={penColor}
             penWidth={penWidth}
           />
-          <div className={drawMode ? "pointer-events-none opacity-60" : ""}>
+          <div className={drawMode || imageMode ? "pointer-events-none opacity-60" : ""}>
             <input
               value={title}
               onChange={(e) => {
@@ -494,7 +534,7 @@ function PageCanvas({
               value={body}
               onChange={handleBodyChange}
               editorRef={editorRef}
-              placeholder="Start writing… select letters to format or press Flag to turn them into tasks."
+              placeholder="Start writing… select letters to format, press Flag for tasks, or insert pictures."
               fontClass="text-[15px]"
               onFormatStateChange={(state) => {
                 setFormatState(state);
@@ -504,7 +544,7 @@ function PageCanvas({
           </div>
         </div>
 
-        {/* minimal footer: autosave status only (controls live in the ribbon) */}
+        {/* minimal footer */}
         <div className="flex items-center border-t border-border/60 px-4 py-2 sm:px-10">
           <span className="ml-auto text-[11px] text-muted-foreground">
             {savedTick > 0 ? "Saved ✓" : "Autosaves as you type"}
@@ -522,18 +562,26 @@ function PageCanvas({
 export default function NotesPanel({
   activePage,
   pages,
+  notebooks,
+  activeNotebookId,
   pagesLoading,
+  onSelectNotebook,
+  onSelectPage,
   onNewPage,
   onNewSubPage,
-  onSelectPage,
+  onNewNotebook,
   onFlagTask,
 }: {
   activePage: Doc<"notePages"> | null;
   pages: Doc<"notePages">[];
+  notebooks: Doc<"notebooks">[];
+  activeNotebookId: NotebookId | null;
   pagesLoading: boolean;
+  onSelectNotebook: (id: NotebookId) => void;
+  onSelectPage: (id: PageId) => void;
   onNewPage: () => void;
   onNewSubPage: (parentId: PageId) => void;
-  onSelectPage: (pageId: PageId) => void;
+  onNewNotebook: () => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
 }) {
   if (pagesLoading && !activePage) {
@@ -545,31 +593,50 @@ export default function NotesPanel({
     );
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      {activePage ? (
-        <PageCanvas
-          key={activePage._id}
-          page={activePage}
-          pages={pages}
-          onSelectPage={onSelectPage}
-          onNewPage={onNewPage}
-          onNewSubPage={onNewSubPage}
-          onFlagTask={onFlagTask}
-        />
-      ) : (
+  if (!activePage) {
+    return (
+      <div className="flex flex-col gap-3">
+        {notebooks.length > 0 && (
+          <NotebookColumns
+            notebooks={notebooks}
+            activeNotebookId={activeNotebookId}
+            pages={pages}
+            activePage={null}
+            onSelectNotebook={onSelectNotebook}
+            onSelectPage={onSelectPage}
+            onNewPage={onNewPage}
+            onNewSubPage={() => {}}
+            onNewNotebook={onNewNotebook}
+          />
+        )}
         <div className="rounded-2xl border bg-card px-6 py-14 text-center shadow-sm">
           <StickyNote className="mx-auto size-8 text-muted-foreground/40" />
           <p className="mt-3 font-medium">No page selected</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick a page from the side menu, or add a new one.
+            Pick a page from the columns above or the side menu.
           </p>
           <Button onClick={onNewPage} className="mt-5 rounded-xl">
             <Plus className="size-4" />
             New page
           </Button>
         </div>
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <PageCanvas
+      key={activePage._id}
+      page={activePage}
+      pages={pages}
+      notebooks={notebooks}
+      activeNotebookId={activeNotebookId}
+      onSelectNotebook={onSelectNotebook}
+      onSelectPage={onSelectPage}
+      onNewPage={onNewPage}
+      onNewSubPage={onNewSubPage}
+      onNewNotebook={onNewNotebook}
+      onFlagTask={onFlagTask}
+    />
   );
 }

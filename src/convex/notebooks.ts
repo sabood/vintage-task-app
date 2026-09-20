@@ -220,6 +220,7 @@ export const updatePage = mutation({
     title: v.optional(v.string()),
     body: v.optional(v.string()),
     drawing: v.optional(v.string()),
+    images: v.optional(v.string()),
     numbered: v.optional(v.boolean()),
     font: v.optional(noteFontValidator),
     color: v.optional(noteColorValidator),
