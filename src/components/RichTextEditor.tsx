@@ -32,6 +32,8 @@ export type FormatCmd =
   | "italic"
   | "underline"
   | "strikeThrough"
+  | "subscript"
+  | "superscript"
   | "foreColor"
   | "hiliteColor"
   | "justifyLeft"
@@ -59,6 +61,47 @@ export function formatSelection(cmd: FormatCmd, arg?: string): void {
   } else {
     document.execCommand(cmd);
   }
+}
+
+/** Restore the cached selection inside the editor (best effort). */
+function restoreSavedSelection(): Selection | null {
+  const sel = window.getSelection();
+  if (!sel) return null;
+  if (sel.rangeCount === 0 && savedRange) {
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+  return sel.rangeCount > 0 ? sel : null;
+}
+
+/** Word-style font size for the selected letters (replaces the size-7 hack). */
+export function applyFontSize(px: number): void {
+  const sel = restoreSavedSelection();
+  if (!sel) return;
+  document.execCommand("styleWithCSS", false, "false");
+  document.execCommand("fontSize", false, "7");
+  // find the editor that owns the selection and swap font[size=7] → styled span
+  const anchor =
+    sel.anchorNode instanceof HTMLElement
+      ? sel.anchorNode
+      : sel.anchorNode?.parentElement;
+  const editor = anchor?.closest(".rich-editor");
+  if (editor) {
+    editor.querySelectorAll('font[size="7"]').forEach((f) => {
+      const span = document.createElement("span");
+      span.style.fontSize = `${px}px`;
+      span.innerHTML = (f as HTMLElement).innerHTML;
+      f.replaceWith(span);
+    });
+  }
+}
+
+/** Word-style font family for the selected letters. */
+export function applyFontFamily(stack: string): void {
+  const sel = restoreSavedSelection();
+  if (!sel) return;
+  document.execCommand("styleWithCSS", false, "true");
+  document.execCommand("fontName", false, stack);
 }
 
 /** Word-style block formats. */
@@ -106,6 +149,8 @@ export type FormatState = {
   strikeThrough: boolean;
   ul: boolean;
   ol: boolean;
+  sub: boolean;
+  sup: boolean;
 };
 
 export function queryFormatState(): FormatState {
@@ -123,6 +168,8 @@ export function queryFormatState(): FormatState {
     strikeThrough: q("strikeThrough"),
     ul: q("insertUnorderedList"),
     ol: q("insertOrderedList"),
+    sub: q("subscript"),
+    sup: q("superscript"),
   };
 }
 
