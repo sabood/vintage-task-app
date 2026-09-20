@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import { noteColorValidator, noteFontValidator } from "./schema";
 import { v } from "convex/values";
 
 const MAX_TITLE_LENGTH = 120;
@@ -23,8 +24,14 @@ export const list = query({
 
 /** Create a new note. */
 export const add = mutation({
-  args: { title: v.string(), body: v.string() },
-  handler: async (ctx, { title, body }) => {
+  args: {
+    title: v.string(),
+    body: v.string(),
+    numbered: v.optional(v.boolean()),
+    font: v.optional(noteFontValidator),
+    color: v.optional(noteColorValidator),
+  },
+  handler: async (ctx, { title, body, numbered, font, color }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) {
       throw new Error("Sign in to create a note.");
@@ -44,14 +51,24 @@ export const add = mutation({
       ownerId: userId,
       title: cleanTitle,
       body: cleanBody,
+      numbered: numbered ?? false,
+      font: font ?? "sans",
+      color: color ?? "default",
     });
   },
 });
 
 /** Update an existing note. */
 export const update = mutation({
-  args: { id: v.id("notes"), title: v.string(), body: v.string() },
-  handler: async (ctx, { id, title, body }) => {
+  args: {
+    id: v.id("notes"),
+    title: v.string(),
+    body: v.string(),
+    numbered: v.optional(v.boolean()),
+    font: v.optional(noteFontValidator),
+    color: v.optional(noteColorValidator),
+  },
+  handler: async (ctx, { id, title, body, numbered, font, color }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) {
       throw new Error("Sign in first.");
@@ -74,7 +91,13 @@ export const update = mutation({
     if (cleanBody.length > MAX_BODY_LENGTH) {
       throw new Error("That note is too long.");
     }
-    await ctx.db.patch(id, { title: cleanTitle, body: cleanBody });
+    await ctx.db.patch(id, {
+      title: cleanTitle,
+      body: cleanBody,
+      numbered: numbered ?? false,
+      font: font ?? "sans",
+      color: color ?? "default",
+    });
   },
 });
 

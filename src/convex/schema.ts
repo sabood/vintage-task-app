@@ -16,6 +16,26 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
+// note formatting: body font family
+export const noteFontValidator = v.union(
+  v.literal("sans"),
+  v.literal("serif"),
+  v.literal("mono"),
+  v.literal("hand"),
+);
+export type NoteFont = Infer<typeof noteFontValidator>;
+
+// note formatting: accent color
+export const noteColorValidator = v.union(
+  v.literal("default"),
+  v.literal("indigo"),
+  v.literal("emerald"),
+  v.literal("amber"),
+  v.literal("rose"),
+  v.literal("sky"),
+);
+export type NoteColor = Infer<typeof noteColorValidator>;
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -44,6 +64,9 @@ const schema = defineSchema(
       ownerId: v.id("users"), // the author of the note
       title: v.string(),
       body: v.string(),
+      numbered: v.optional(v.boolean()), // render body lines with numbers
+      font: v.optional(noteFontValidator), // body font family
+      color: v.optional(noteColorValidator), // accent color
     }).index("by_owner", ["ownerId"]),
 
     // add other tables here
