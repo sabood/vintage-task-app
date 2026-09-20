@@ -232,9 +232,11 @@ export function ImageLayer({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
-      onPointerDown={() => {
-        // clicking the paper around images exits image editing
+      onPointerDown={(e) => {
+        // clicking the paper around images exits image editing.
+        // preventDefault so the click doesn't blur the contentEditable editor.
         if (active) {
+          e.preventDefault();
           setSelectedId(null);
           onActiveChange(false);
         }

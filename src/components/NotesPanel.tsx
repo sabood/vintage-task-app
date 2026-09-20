@@ -161,7 +161,13 @@ function PageCanvas({
           const mark = document.createElement("mark");
           mark.className = "flag-mark";
           range.surroundContents(mark);
+          // caret goes right AFTER the mark so new letters stay plain
+          const after = document.createRange();
+          after.setStartAfter(mark);
+          after.collapse(true);
           sel.removeAllRanges();
+          sel.addRange(after);
+          editorRef.current?.focus();
         } catch {
           formatSelection("hiliteColor", "#fde68a");
         }
@@ -186,6 +192,28 @@ function PageCanvas({
     setImages(next);
     scheduleSave({ images: JSON.stringify(next) });
   };
+
+  /** Leaving image mode returns focus to the paper so typing resumes.
+   *  Deferred to the next tick so it runs after the browser's default
+   *  mousedown focus handling (which would otherwise blur the editor). */
+  const exitImageModeAndFocus = useCallback((active: boolean) => {
+    setImageMode(active);
+    if (!active) {
+      setTimeout(() => {
+        const el = editorRef.current;
+        if (!el) return;
+        el.focus();
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          range.collapse(false); // caret at the end of the note
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }, 0);
+    }
+  }, []);
 
   return (
     <div className="flex flex-1 flex-col gap-3">
@@ -364,7 +392,7 @@ function PageCanvas({
             images={images}
             onChange={handleImagesChange}
             active={imageMode}
-            onActiveChange={setImageMode}
+            onActiveChange={exitImageModeAndFocus}
           />
           <DrawingCanvas
             strokes={strokes}
