@@ -159,9 +159,14 @@ function PageCanvas({
       if (sel && sel.rangeCount > 0) {
         const range = sel.getRangeAt(0);
         try {
+          // Extract the selected nodes and wrap them in a flag mark.
+          // Unlike surroundContents this survives partial-element and
+          // multi-paragraph selections, and unlike execCommand("hiliteColor")
+          // it never leaves a paint style active on the caret.
           const mark = document.createElement("mark");
           mark.className = "flag-mark";
-          range.surroundContents(mark);
+          mark.appendChild(range.extractContents());
+          range.insertNode(mark);
           // caret goes right AFTER the mark so new letters stay plain
           const after = document.createRange();
           after.setStartAfter(mark);
@@ -170,7 +175,7 @@ function PageCanvas({
           sel.addRange(after);
           editorRef.current?.focus();
         } catch {
-          formatSelection("hiliteColor", "#fde68a");
+          // couldn't apply the visual mark — the task was still created
         }
         if (editorRef.current) {
           handleBodyChange(editorRef.current.innerHTML);
