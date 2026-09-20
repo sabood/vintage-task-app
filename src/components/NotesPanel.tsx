@@ -23,11 +23,8 @@ import {
   parseImages,
 } from "@/components/ImageLayer";
 import {
-  ChevronsLeft,
-  FileText,
   Image as ImageIcon,
   Loader2,
-  Notebook,
   PencilLine,
   Plus,
   StickyNote,
@@ -37,21 +34,7 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type NotebookId = Id<"notebooks">;
 type PageId = Id<"notePages">;
-
-const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
-  default: "bg-muted-foreground/60",
-  indigo: "bg-indigo-500",
-  violet: "bg-violet-500",
-  sky: "bg-sky-500",
-  teal: "bg-teal-500",
-  emerald: "bg-emerald-500",
-  amber: "bg-amber-500",
-  orange: "bg-orange-500",
-  rose: "bg-rose-500",
-  pink: "bg-pink-500",
-};
 
 const ACCENT_CLASS: Record<NoteColor, string> = {
   default: "note-default",
@@ -67,193 +50,14 @@ const ACCENT_CLASS: Record<NoteColor, string> = {
 };
 
 /* ──────────────────────────────────────────────────────────────────────── */
-/* OneNote-style column strip: Notebooks ▸ Pages ▸ Sub-pages                */
-/* ──────────────────────────────────────────────────────────────────────── */
-
-function ColumnHeader({
-  children,
-  onAdd,
-}: {
-  children: React.ReactNode;
-  onAdd?: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between border-b border-border/60 px-2.5 py-1.5">
-      <span className="truncate text-[11px] font-semibold tracking-widest text-muted-foreground/80 uppercase">
-        {children}
-      </span>
-      {onAdd && (
-        <button
-          type="button"
-          aria-label="Add"
-          className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onAdd}
-        >
-          <Plus className="size-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function NotebookColumns({
-  notebooks,
-  activeNotebookId,
-  pages,
-  activePage,
-  onSelectNotebook,
-  onSelectPage,
-  onNewPage,
-  onNewSubPage,
-  onNewNotebook,
-}: {
-  notebooks: Doc<"notebooks">[];
-  activeNotebookId: NotebookId | null;
-  pages: Doc<"notePages">[];
-  activePage: Doc<"notePages"> | null;
-  onSelectNotebook: (id: NotebookId) => void;
-  onSelectPage: (id: PageId) => void;
-  onNewPage: () => void;
-  onNewSubPage: (parentId: PageId) => void;
-  onNewNotebook: () => void;
-}) {
-  const topLevel = pages.filter((p) => !p.parentId);
-  const subPages = activePage
-    ? pages.filter((p) => p.parentId === activePage._id)
-    : [];
-
-  return (
-    <div className="flex overflow-hidden rounded-xl border bg-card shadow-sm">
-      {/* column 1: notebooks */}
-      <div className="w-40 shrink-0 border-r border-border/60">
-        <ColumnHeader onAdd={onNewNotebook}>Notebooks</ColumnHeader>
-        <div className="max-h-52 overflow-y-auto p-1">
-          {notebooks.map((nb) => {
-            const active = nb._id === activeNotebookId;
-            return (
-              <button
-                key={nb._id}
-                type="button"
-                onClick={() => onSelectNotebook(nb._id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                  active
-                    ? "bg-primary/10 font-medium text-primary"
-                    : "text-foreground/80 hover:bg-accent",
-                )}
-              >
-                <Notebook className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-muted-foreground/60")} />
-                <span className="truncate">{nb.title}</span>
-              </button>
-            );
-          })}
-          {notebooks.length === 0 && (
-            <p className="px-2 py-2 text-xs text-muted-foreground">None yet.</p>
-          )}
-        </div>
-      </div>
-
-      {/* column 2: pages */}
-      <div className="w-44 shrink-0 border-r border-border/60">
-        <ColumnHeader onAdd={onNewPage}>Pages</ColumnHeader>
-        <div className="max-h-52 overflow-y-auto p-1">
-          {topLevel.map((page) => {
-            const active = activePage?._id === page._id;
-            return (
-              <button
-                key={page._id}
-                type="button"
-                onClick={() => onSelectPage(page._id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                  active
-                    ? "bg-primary/10 font-medium text-primary"
-                    : "text-foreground/80 hover:bg-accent",
-                )}
-              >
-                <span
-                  className={cn("size-2 shrink-0 rounded-full", ACCENT_DOT_CLASS[page.color ?? "default"])}
-                  aria-hidden
-                />
-                <span className="truncate">{page.title}</span>
-              </button>
-            );
-          })}
-          {topLevel.length === 0 && (
-            <p className="px-2 py-2 text-xs text-muted-foreground">No pages.</p>
-          )}
-        </div>
-      </div>
-
-      {/* column 3: sub-pages */}
-      <div className="min-w-0 flex-1">
-        <ColumnHeader onAdd={activePage ? () => onNewSubPage(activePage._id) : undefined}>
-          Sub-pages
-        </ColumnHeader>
-        <div className="max-h-52 overflow-y-auto p-1">
-          {activePage ? (
-            <>
-              {subPages.map((page) => {
-                const active = activePage._id === page._id;
-                return (
-                  <button
-                    key={page._id}
-                    type="button"
-                    onClick={() => onSelectPage(page._id)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left text-xs transition-colors pl-5",
-                      active
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                    )}
-                  >
-                    <FileText className="size-3 shrink-0 opacity-60" />
-                    <span className="truncate">{page.title}</span>
-                  </button>
-                );
-              })}
-              {subPages.length === 0 && (
-                <p className="px-2 py-2 text-xs text-muted-foreground">
-                  No sub-pages in this page.
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="px-2 py-2 text-xs text-muted-foreground">
-              Select a page first.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ──────────────────────────────────────────────────────────────────────── */
-/* Page canvas: ribbon, columns, paper, drawing + images                    */
+/* Page canvas: ribbon, paper, drawing + images                             */
 /* ──────────────────────────────────────────────────────────────────────── */
 
 function PageCanvas({
   page,
-  pages,
-  notebooks,
-  activeNotebookId,
-  onSelectNotebook,
-  onSelectPage,
-  onNewPage,
-  onNewSubPage,
-  onNewNotebook,
   onFlagTask,
 }: {
   page: Doc<"notePages">;
-  pages: Doc<"notePages">[];
-  notebooks: Doc<"notebooks">[];
-  activeNotebookId: NotebookId | null;
-  onSelectNotebook: (id: NotebookId) => void;
-  onSelectPage: (id: PageId) => void;
-  onNewPage: () => void;
-  onNewSubPage: (parentId: PageId) => void;
-  onNewNotebook: () => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
 }) {
   const updatePage = useMutation(api.notebooks.updatePage);
@@ -412,19 +216,6 @@ function PageCanvas({
         }}
       />
 
-      {/* OneNote-style columns: Notebooks ▸ Pages ▸ Sub-pages */}
-      <NotebookColumns
-        notebooks={notebooks}
-        activeNotebookId={activeNotebookId}
-        pages={pages}
-        activePage={page}
-        onSelectNotebook={onSelectNotebook}
-        onSelectPage={onSelectPage}
-        onNewPage={onNewPage}
-        onNewSubPage={onNewSubPage}
-        onNewNotebook={onNewNotebook}
-      />
-
       {/* paper */}
       <div
         className={`${ACCENT_CLASS[accent]} note-card relative min-h-[32rem] flex-1 rounded-2xl border bg-card shadow-sm`}
@@ -561,27 +352,13 @@ function PageCanvas({
 
 export default function NotesPanel({
   activePage,
-  pages,
-  notebooks,
-  activeNotebookId,
   pagesLoading,
-  onSelectNotebook,
-  onSelectPage,
   onNewPage,
-  onNewSubPage,
-  onNewNotebook,
   onFlagTask,
 }: {
   activePage: Doc<"notePages"> | null;
-  pages: Doc<"notePages">[];
-  notebooks: Doc<"notebooks">[];
-  activeNotebookId: NotebookId | null;
   pagesLoading: boolean;
-  onSelectNotebook: (id: NotebookId) => void;
-  onSelectPage: (id: PageId) => void;
   onNewPage: () => void;
-  onNewSubPage: (parentId: PageId) => void;
-  onNewNotebook: () => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
 }) {
   if (pagesLoading && !activePage) {
@@ -595,31 +372,16 @@ export default function NotesPanel({
 
   if (!activePage) {
     return (
-      <div className="flex flex-col gap-3">
-        {notebooks.length > 0 && (
-          <NotebookColumns
-            notebooks={notebooks}
-            activeNotebookId={activeNotebookId}
-            pages={pages}
-            activePage={null}
-            onSelectNotebook={onSelectNotebook}
-            onSelectPage={onSelectPage}
-            onNewPage={onNewPage}
-            onNewSubPage={() => {}}
-            onNewNotebook={onNewNotebook}
-          />
-        )}
-        <div className="rounded-2xl border bg-card px-6 py-14 text-center shadow-sm">
-          <StickyNote className="mx-auto size-8 text-muted-foreground/40" />
-          <p className="mt-3 font-medium">No page selected</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pick a page from the columns above or the side menu.
-          </p>
-          <Button onClick={onNewPage} className="mt-5 rounded-xl">
-            <Plus className="size-4" />
-            New page
-          </Button>
-        </div>
+      <div className="rounded-2xl border bg-card px-6 py-14 text-center shadow-sm">
+        <StickyNote className="mx-auto size-8 text-muted-foreground/40" />
+        <p className="mt-3 font-medium">No page selected</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pick a notebook and page from the explorer in the side menu.
+        </p>
+        <Button onClick={onNewPage} className="mt-5 rounded-xl">
+          <Plus className="size-4" />
+          New page
+        </Button>
       </div>
     );
   }
@@ -628,14 +390,6 @@ export default function NotesPanel({
     <PageCanvas
       key={activePage._id}
       page={activePage}
-      pages={pages}
-      notebooks={notebooks}
-      activeNotebookId={activeNotebookId}
-      onSelectNotebook={onSelectNotebook}
-      onSelectPage={onSelectPage}
-      onNewPage={onNewPage}
-      onNewSubPage={onNewSubPage}
-      onNewNotebook={onNewNotebook}
       onFlagTask={onFlagTask}
     />
   );

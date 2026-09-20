@@ -50,6 +50,7 @@ export default function Dashboard() {
     api.notebooks.listPages,
     notebookId ? { notebookId } : "skip",
   );
+  const allPages = useQuery(api.notebooks.listAllPages);
   const pageList = pages ?? [];
   const activePage =
     pageList.find((p) => p._id === activePageId) ?? pageList[0] ?? null;
@@ -103,16 +104,18 @@ export default function Dashboard() {
     }
   };
 
-  const handleNewPage = async (parentId?: PageId) => {
-    if (!notebookId) {
+  const handleNewPage = async (targetNotebookId?: NotebookId, parentId?: PageId) => {
+    const nbId = targetNotebookId ?? notebookId;
+    if (!nbId) {
       toast.error("Create a notebook first.");
       return;
     }
     try {
       const id = await addPage({
-        notebookId,
+        notebookId: nbId,
         parentId: parentId ?? undefined,
       });
+      setActiveNotebookId(nbId);
       setActivePageId(id);
       setSection("notes");
     } catch (error) {
@@ -173,11 +176,6 @@ export default function Dashboard() {
     await signOut();
     navigate("/");
   };
-
-  const pagesByNotebook: Record<NotebookId, typeof pageList | undefined> = {};
-  if (notebookId) {
-    pagesByNotebook[notebookId] = pageList;
-  }
 
   const NAV_ITEMS: {
     id: Section;
@@ -243,18 +241,19 @@ export default function Dashboard() {
           })}
         </nav>
 
-        {/* notebooks submenu tree */}
+        {/* notebooks explorer tree */}
         <div className="mt-4 border-t border-border/60 px-3 pt-3 pb-4">
           <NotesSidebar
             notebooks={nbList}
-            pagesByNotebook={pagesByNotebook}
-            loading={notebooks === undefined}
+            allPages={allPages}
+            loading={notebooks === undefined || allPages === undefined}
             activeNotebookId={notebookId}
             activePageId={activePage?._id ?? null}
             onSelectNotebook={handleSelectNotebook}
             onSelectPage={handleSelectPage}
             onNewNotebook={handleNewNotebook}
-            onNewPage={() => handleNewPage()}
+            onNewPage={(nbId) => void handleNewPage(nbId)}
+            onNewSubPage={(nbId, parentId) => void handleNewPage(nbId, parentId)}
             onRenameNotebook={handleRenameNotebook}
             onRenamePage={handleRenamePage}
             onDeleteNotebook={handleDeleteNotebook}
@@ -346,15 +345,8 @@ export default function Dashboard() {
           ) : (
             <NotesPanel
               activePage={activePage}
-              pages={pageList}
-              notebooks={nbList}
-              activeNotebookId={notebookId}
               pagesLoading={pages === undefined}
-              onSelectNotebook={handleSelectNotebook}
-              onSelectPage={(pageId) => setActivePageId(pageId)}
               onNewPage={() => handleNewPage()}
-              onNewSubPage={(parentId) => handleNewPage(parentId)}
-              onNewNotebook={handleNewNotebook}
               onFlagTask={handleFlagTask}
             />
           )}

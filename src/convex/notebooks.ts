@@ -120,6 +120,23 @@ export const listPages = query({
   },
 });
 
+/** All pages for the signed-in user (for the sidebar tree), ordered. */
+export const listAllPages = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const pages = await ctx.db
+      .query("notePages")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return pages.sort(
+      (a, b) =>
+        (a.order ?? a._creationTime) - (b.order ?? b._creationTime),
+    );
+  },
+});
+
 /** One page by id (ownership-checked), for tab lookups. */
 export const getPage = query({
   args: { id: v.id("notePages") },
