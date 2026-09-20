@@ -119,6 +119,46 @@
   user-select: none;
 }
 
+/* Word-style blocks inside the editor */
+.rich-editor h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.5rem 0 0.25rem;
+}
+.rich-editor h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.4rem 0 0.2rem;
+}
+.rich-editor h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.3rem 0 0.15rem;
+}
+.rich-editor ul,
+.rich-editor ol {
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+.rich-editor ul {
+  list-style: disc;
+}
+.rich-editor ol {
+  list-style: decimal;
+}
+.rich-editor li {
+  min-height: 1.5rem;
+}
+.rich-editor blockquote {
+  border-left: 3px solid var(--primary);
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
 /* CHANGE VALUES FOR THEME — Modern: crisp neutrals with an indigo accent */
 :root {
   --radius: 0.75rem;

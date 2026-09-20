@@ -27,11 +27,50 @@ function escapeHtml(text: string): string {
 /** Cached selection so toolbar buttons (which steal focus) keep working. */
 let savedRange: Range | null = null;
 
-/**
- * Apply a formatting command to the selected letters only.
- * "bold" toggles bold; "foreColor" applies an ink color (arg = CSS color).
- */
-export function formatSelection(cmd: "bold" | "foreColor", arg?: string): void {
+export type FormatCmd =
+  | "bold"
+  | "italic"
+  | "underline"
+  | "strikeThrough"
+  | "foreColor"
+  | "hiliteColor"
+  | "justifyLeft"
+  | "justifyCenter"
+  | "justifyRight"
+  | "justifyFull"
+  | "insertUnorderedList"
+  | "insertOrderedList"
+  | "removeFormat"
+  | "undo"
+  | "redo";
+
+/** Apply a formatting command to the selected letters only. */
+export function formatSelection(cmd: FormatCmd, arg?: string): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+  if (sel.rangeCount === 0 && savedRange) {
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+  if (sel.rangeCount === 0 && cmd !== "undo" && cmd !== "redo") return;
+  document.execCommand("styleWithCSS", false, "true");
+  if (arg !== undefined) {
+    document.execCommand(cmd, false, arg);
+  } else {
+    document.execCommand(cmd);
+  }
+}
+
+/** Word-style block formats. */
+export const BLOCK_FORMATS = [
+  { value: "<p>", label: "Paragraph" },
+  { value: "<h1>", label: "Heading 1" },
+  { value: "<h2>", label: "Heading 2" },
+  { value: "<h3>", label: "Heading 3" },
+  { value: "<blockquote>", label: "Quote" },
+] as const;
+
+export function formatBlock(tag: string): void {
   const sel = window.getSelection();
   if (!sel) return;
   if (sel.rangeCount === 0 && savedRange) {
@@ -39,12 +78,52 @@ export function formatSelection(cmd: "bold" | "foreColor", arg?: string): void {
     sel.addRange(savedRange);
   }
   if (sel.rangeCount === 0) return;
-  document.execCommand("styleWithCSS", false, "true");
-  if (cmd === "bold") {
-    document.execCommand("bold");
-  } else if (arg) {
-    document.execCommand("foreColor", false, arg);
+  document.execCommand("formatBlock", false, tag);
+}
+
+/** Read the current tag name around the caret, e.g. "h1" | "p" | "blockquote". */
+export function currentBlockTag(): string {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return "p";
+  let node: Node | null = sel.getRangeAt(0).startContainer;
+  while (node && node !== document.body) {
+    if (node instanceof HTMLElement) {
+      const tag = node.tagName.toLowerCase();
+      if (["h1", "h2", "h3", "p", "blockquote", "li"].includes(tag)) {
+        return tag === "li" ? "p" : tag;
+      }
+    }
+    node = node.parentNode;
   }
+  return "p";
+}
+
+/** Snapshot of toggled formats at the caret/selection. */
+export type FormatState = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikeThrough: boolean;
+  ul: boolean;
+  ol: boolean;
+};
+
+export function queryFormatState(): FormatState {
+  const q = (cmd: string) => {
+    try {
+      return document.queryCommandState(cmd);
+    } catch {
+      return false;
+    }
+  };
+  return {
+    bold: q("bold"),
+    italic: q("italic"),
+    underline: q("underline"),
+    strikeThrough: q("strikeThrough"),
+    ul: q("insertUnorderedList"),
+    ol: q("insertOrderedList"),
+  };
 }
 
 export type InkOption = { value: string; label: string; dot: string };
@@ -70,7 +149,7 @@ export function RichTextEditor({
   numbered,
   fontClass,
   inkClass,
-  onBoldStateChange,
+  onFormatStateChange,
   editorRef,
 }: {
   value: string;
@@ -80,7 +159,7 @@ export function RichTextEditor({
   numbered?: boolean;
   fontClass?: string;
   inkClass?: string;
-  onBoldStateChange?: (bold: boolean) => void;
+  onFormatStateChange?: (state: FormatState) => void;
   editorRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const innerRef = useRef<HTMLDivElement>(null);
@@ -105,7 +184,7 @@ export function RichTextEditor({
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode)) {
       savedRange = sel.getRangeAt(0).cloneRange();
-      onBoldStateChange?.(document.queryCommandState("bold"));
+      onFormatStateChange?.(queryFormatState());
     }
   };
 
@@ -149,11 +228,19 @@ export function RichTextEditor({
         emit();
       }}
       onKeyDown={(e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        const mod = e.ctrlKey || e.metaKey;
+        if (!mod) return;
+        const key = e.key.toLowerCase();
+        const handled: Record<string, FormatCmd> = {
+          b: "bold",
+          i: "italic",
+          u: "underline",
+        };
+        if (handled[key]) {
           e.preventDefault();
-          formatSelection("bold");
+          formatSelection(handled[key]);
           emit();
-          onBoldStateChange?.(document.queryCommandState("bold"));
+          onFormatStateChange?.(queryFormatState());
         }
       }}
     />
