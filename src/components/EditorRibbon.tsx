@@ -5,8 +5,11 @@ import {
   applyFontFamily,
   applyFontSize,
   formatSelection,
-  INK_COMMAND_COLORS,
 } from "@/components/RichTextEditor";
+import ColorPalette, {
+  HIGHLIGHT_COLORS,
+  TEXT_COLORS,
+} from "@/components/ColorPalette";
 import type { NoteColor } from "@/convex/schema";
 import { cn } from "@/lib/utils";
 import {
@@ -22,7 +25,6 @@ import {
   Italic,
   List,
   ListOrdered,
-  Palette,
   Redo2,
   Strikethrough,
   Subscript,
@@ -33,7 +35,7 @@ import {
   Image as ImageIcon,
   PencilLine,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 const FONT_FAMILIES: { label: string; stack: string; css: string }[] = [
   { label: "Inter (body)", stack: '"Inter", sans-serif', css: "font-sans" },
@@ -44,23 +46,6 @@ const FONT_FAMILIES: { label: string; stack: string; css: string }[] = [
 ];
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 30, 36];
-
-const INK_SWATCHES: { value: string; label: string; dot: string }[] = [
-  { value: "default", label: "Default ink", dot: "bg-foreground/70" },
-  { value: "indigo", label: "Indigo ink", dot: "bg-indigo-500" },
-  { value: "emerald", label: "Emerald ink", dot: "bg-emerald-500" },
-  { value: "amber", label: "Amber ink", dot: "bg-amber-500" },
-  { value: "rose", label: "Rose ink", dot: "bg-rose-500" },
-  { value: "sky", label: "Sky ink", dot: "bg-sky-500" },
-];
-
-const HIGHLIGHT_SWATCHES: { value: string; dot: string }[] = [
-  { value: "#fde68a", dot: "bg-yellow-300" },
-  { value: "#bbf7d0", dot: "bg-green-300" },
-  { value: "#bfdbfe", dot: "bg-blue-300" },
-  { value: "#fbcfe8", dot: "bg-pink-300" },
-  { value: "#e9d5ff", dot: "bg-purple-300" },
-];
 
 const ACCENT_SWATCHES: { value: NoteColor; label: string; dot: string }[] = [
   { value: "default", label: "Plain", dot: "bg-muted-foreground/60" },
@@ -151,18 +136,6 @@ export default function EditorRibbon({
   const [size, setSize] = useState(16);
   const [inkOpen, setInkOpen] = useState(false);
   const [hlOpen, setHlOpen] = useState(false);
-  const inkRef = useRef<HTMLDivElement>(null);
-  const hlRef = useRef<HTMLDivElement>(null);
-
-  // close swatch popovers on outside click
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      if (inkRef.current && !inkRef.current.contains(e.target as Node)) setInkOpen(false);
-      if (hlRef.current && !hlRef.current.contains(e.target as Node)) setHlOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, []);
 
   const grow = () => {
     const next = Math.min(72, Math.round(size * 1.2) + 1);
@@ -256,72 +229,36 @@ export default function EditorRibbon({
 
         <RibbonDivider />
 
-        {/* ink color with dropdown */}
-        <div ref={inkRef} className="relative flex shrink-0 items-center">
-          <RibbonButton label="Ink color" onClick={() => setInkOpen((o) => !o)}>
-            <Palette className="size-4" />
+        {/* ink color with full palette */}
+        <div className="relative flex shrink-0 items-center">
+          <RibbonButton label="Font color" active={inkOpen} onClick={() => setInkOpen((o) => !o)}>
+            <span className="relative">
+              <Baseline className="size-4" />
+              <span className="absolute inset-x-0.5 bottom-0 h-1 rounded-sm bg-indigo-500" />
+            </span>
           </RibbonButton>
-          <button
-            type="button"
-            aria-label="Apply current ink color"
-            className="-ml-1 grid size-7 place-items-center rounded-md hover:bg-accent"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onFormat("foreColor", INK_COMMAND_COLORS.indigo)}
-          >
-            <Baseline className="size-4 text-indigo-500" />
-          </button>
-          {inkOpen && (
-            <div className="absolute top-8 left-0 z-40 flex gap-1 rounded-xl border bg-popover p-2 shadow-lg">
-              {INK_SWATCHES.map((i) => (
-                <button
-                  key={i.value}
-                  type="button"
-                  aria-label={i.label}
-                  title={i.label}
-                  className={cn("size-5 rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-popover transition-transform hover:scale-110", i.dot)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    onFormat("foreColor", i.value === "default" ? undefined : INK_COMMAND_COLORS[i.value]);
-                    setInkOpen(false);
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          <ColorPalette
+            open={inkOpen}
+            onOpenChange={setInkOpen}
+            colors={TEXT_COLORS}
+            onPick={(hex) => onFormat("foreColor", hex)}
+          />
         </div>
 
-        {/* highlight with dropdown */}
-        <div ref={hlRef} className="relative flex shrink-0 items-center">
-          <RibbonButton label="Highlight color" onClick={() => setHlOpen((o) => !o)}>
-            <Highlighter className="size-4" />
+        {/* highlight with full palette */}
+        <div className="relative flex shrink-0 items-center">
+          <RibbonButton label="Highlight color" active={hlOpen} onClick={() => setHlOpen((o) => !o)}>
+            <span className="relative">
+              <Highlighter className="size-4" />
+              <span className="absolute inset-x-0.5 bottom-0 h-1 rounded-sm bg-yellow-300" />
+            </span>
           </RibbonButton>
-          <button
-            type="button"
-            aria-label="Apply yellow highlight"
-            className="-ml-1 grid size-7 place-items-center rounded-md hover:bg-accent"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onFormat("hiliteColor", "#fde68a")}
-          >
-            <span className="block size-4 rounded-[3px] bg-yellow-300" />
-          </button>
-          {hlOpen && (
-            <div className="absolute top-8 left-0 z-40 flex gap-1 rounded-xl border bg-popover p-2 shadow-lg">
-              {HIGHLIGHT_SWATCHES.map((h) => (
-                <button
-                  key={h.value}
-                  type="button"
-                  aria-label={h.dot}
-                  title="Highlight"
-                  className={cn("size-5 rounded-[4px] ring-2 ring-transparent ring-offset-2 ring-offset-popover transition-transform hover:scale-110", h.dot)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    onFormat("hiliteColor", h.value);
-                    setHlOpen(false);
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          <ColorPalette
+            open={hlOpen}
+            onOpenChange={setHlOpen}
+            colors={HIGHLIGHT_COLORS}
+            onPick={(hex) => onFormat("hiliteColor", hex)}
+          />
         </div>
 
         {/* lists */}

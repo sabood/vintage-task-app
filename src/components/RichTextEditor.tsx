@@ -46,8 +46,17 @@ export type FormatCmd =
   | "undo"
   | "redo";
 
-/** Apply a formatting command to the selected letters only. */
+/**
+ * Apply a formatting command to the selected letters only.
+ *
+ * `collapseAfter` (used for colors and highlights): after painting the
+ * selection, the caret is placed right AFTER the styled span and the style is
+ * NOT left active — so typing continues in plain ink instead of inheriting
+ * the painted color. Word does the same: a color applies only to the
+ * selection, then the insertion point continues with the previous format.
+ */
 export function formatSelection(cmd: FormatCmd, arg?: string): void {
+  const collapseAfter = cmd === "foreColor" || cmd === "hiliteColor";
   const sel = window.getSelection();
   if (!sel) return;
   if (sel.rangeCount === 0 && savedRange) {
@@ -60,6 +69,39 @@ export function formatSelection(cmd: FormatCmd, arg?: string): void {
     document.execCommand(cmd, false, arg);
   } else {
     document.execCommand(cmd);
+  }
+  if (collapseAfter) collapseToCaretAfterSelection();
+}
+
+/**
+ * Place the caret just after the styled selection (a sibling text node after
+ * the colored span) so what the user types next inherits nothing from it.
+ */
+function collapseToCaretAfterSelection(): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  const styled =
+    range.startContainer instanceof HTMLElement
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  if (!styled) return;
+  const span = styled.closest("span[style], font");
+  if (span?.nextSibling) {
+    const after = document.createRange();
+    after.setStart(span.nextSibling, 0);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  } else if (span?.parentNode) {
+    const after = document.createRange();
+    after.setStartAfter(span);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  }
+  if (span) {
+    savedRange = sel.getRangeAt(0).cloneRange();
   }
 }
 

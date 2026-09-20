@@ -1,25 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+export type PenTool = "pen" | "arrow" | "eraser";
+
 export type Stroke = {
   color: string;
   width: number;
   points: [number, number][]; // normalized 0..1 relative to the canvas box
+  tool: PenTool;
 };
-
-export const PEN_COLORS = [
-  "#6366f1", // indigo
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#f43f5e", // rose
-  "#0ea5e9", // sky
-  "#1e1e2e", // ink
-];
-
-export const PEN_SIZES = [
-  { label: "S", width: 2 },
-  { label: "M", width: 4 },
-  { label: "L", width: 7 },
-];
 
 export function parseStrokes(json: string | undefined): Stroke[] {
   if (!json) return [];
@@ -31,10 +19,82 @@ export function parseStrokes(json: string | undefined): Stroke[] {
   }
 }
 
+/** Older strokes saved before tools existed default to freehand pen. */
+function normalizeStroke(s: Stroke): Stroke {
+  return { ...s, tool: s.tool ?? "pen" };
+}
+
+/** Draw one stroke (freehand polyline or straight arrow) on a 2d context. */
+function paintStroke(
+  ctx: CanvasRenderingContext2D,
+  stroke: Stroke,
+  w: number,
+  h: number,
+) {
+  const pts = stroke.points;
+  if (!pts || pts.length === 0) return;
+  ctx.strokeStyle = stroke.color;
+  ctx.fillStyle = stroke.color;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (stroke.tool === "arrow" && pts.length >= 2) {
+    const [x0, y0] = pts[0];
+    const [x1, y1] = pts[pts.length - 1];
+    const ax = x0 * w;
+    const ay = y0 * h;
+    const bx = x1 * w;
+    const by = y1 * h;
+    ctx.lineWidth = stroke.width;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+
+    // arrowhead sized relative to line thickness
+    const angle = Math.atan2(by - ay, bx - ax);
+    const head = Math.max(stroke.width * 3.2, 9);
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(
+      bx - head * Math.cos(angle - Math.PI / 6.5),
+      by - head * Math.sin(angle - Math.PI / 6.5),
+    );
+    ctx.lineTo(
+      bx - head * Math.cos(angle + Math.PI / 6.5),
+      by - head * Math.sin(angle + Math.PI / 6.5),
+    );
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+
+  if (stroke.tool === "eraser") {
+    // destination-out so it erases strokes underneath on this layer
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.lineWidth = Math.max(stroke.width * 6, 18);
+    ctx.beginPath();
+    const [sx, sy] = pts[0];
+    ctx.moveTo(sx * w, sy * h);
+    for (const [x, y] of pts.slice(1)) ctx.lineTo(x * w, y * h);
+    ctx.stroke();
+    ctx.globalCompositeOperation = "source-over";
+    return;
+  }
+
+  // freehand pen
+  ctx.lineWidth = stroke.width;
+  ctx.beginPath();
+  const [sx, sy] = pts[0];
+  ctx.moveTo(sx * w, sy * h);
+  for (const [x, y] of pts.slice(1)) ctx.lineTo(x * w, y * h);
+  ctx.stroke();
+}
+
 /**
  * Transparent canvas overlay that captures mouse/touch drawing.
+ * Tools: freehand pen, straight arrows, eraser (erases drawn ink only).
  * Strokes are stored in normalized coordinates so they survive resizes.
- * The parent toggles `active` (draw mode); when inactive, pointers pass through.
  */
 export function DrawingCanvas({
   strokes,
@@ -42,12 +102,14 @@ export function DrawingCanvas({
   active,
   penColor,
   penWidth,
+  tool,
 }: {
   strokes: Stroke[];
   onChange: (strokes: Stroke[]) => void;
   active: boolean;
   penColor: string;
   penWidth: number;
+  tool: PenTool;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -71,20 +133,19 @@ export function DrawingCanvas({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    const all = currentRef.current ? [...strokes, currentRef.current] : strokes;
-    for (const stroke of all) {
-      if (stroke.points.length === 0) continue;
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = stroke.width;
-      ctx.beginPath();
-      const [x0, y0] = stroke.points[0];
-      ctx.moveTo(x0 * rect.width, y0 * rect.height);
-      for (const [x, y] of stroke.points.slice(1)) {
-        ctx.lineTo(x * rect.width, y * rect.height);
+    const all = currentRef.current
+      ? [...strokes, currentRef.current]
+      : strokes;
+    for (const raw of all) {
+      const stroke = normalizeStroke(raw);
+      // live eraser preview erases what is already committed
+      if (stroke.tool === "eraser" && currentRef.current === stroke) {
+        ctx.save();
+        paintStroke(ctx, stroke, rect.width, rect.height);
+        ctx.restore();
+      } else {
+        paintStroke(ctx, stroke, rect.width, rect.height);
       }
-      ctx.stroke();
     }
   }, [strokes]);
 
@@ -114,6 +175,7 @@ export function DrawingCanvas({
       color: penColor,
       width: penWidth,
       points: [pointFromEvent(e)],
+      tool,
     };
     setTick((t) => t + 1);
   };
@@ -121,7 +183,13 @@ export function DrawingCanvas({
   const handleMove = (e: React.PointerEvent) => {
     if (!active || !drawingRef.current || !currentRef.current) return;
     e.preventDefault();
-    currentRef.current.points.push(pointFromEvent(e));
+    const p = pointFromEvent(e);
+    if (currentRef.current.tool === "arrow") {
+      // arrows preview as tail → head
+      currentRef.current.points = [currentRef.current.points[0], p];
+    } else {
+      currentRef.current.points.push(p);
+    }
     redraw();
   };
 
@@ -131,11 +199,14 @@ export function DrawingCanvas({
     const finished = currentRef.current;
     currentRef.current = null;
     if (finished && finished.points.length > 0) {
-      onChange([...strokes, finished]);
+      onChange([...strokes, normalizeStroke(finished)]);
     } else {
       setTick((t) => t + 1);
     }
   };
+
+  const cursor =
+    tool === "eraser" ? "cell" : active ? "crosshair" : "default";
 
   return (
     <div
@@ -143,7 +214,7 @@ export function DrawingCanvas({
       className="absolute inset-0 z-10"
       style={{
         pointerEvents: active ? "auto" : "none",
-        cursor: active ? "crosshair" : "default",
+        cursor,
         touchAction: "none",
       }}
     >

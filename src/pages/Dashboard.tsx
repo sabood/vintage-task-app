@@ -261,36 +261,6 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* primary nav */}
-        <nav className="flex flex-col gap-1 px-3">
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = section === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSection(item.id)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4 shrink-0" />
-                <span className="flex-1">
-                  <span className="block text-sm font-medium">{item.label}</span>
-                  <span className="block text-xs opacity-70">
-                    {item.description}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
         {/* section-aware explorer tree */}
         <div className="mt-4 border-t border-border/60 px-3 pt-3 pb-4">
           {section === "tasks" ? (
@@ -351,21 +321,25 @@ export default function Dashboard() {
               </span>
               <span className="font-display font-semibold">Slate</span>
               <span className="mx-1 h-5 w-px bg-border" />
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSection(item.id)}
-                  className={cn(
-                    "rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors",
-                    section === item.id
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSection(item.id)}
+                    aria-label={item.label}
+                    className={cn(
+                      "grid size-7 place-items-center rounded-lg transition-colors",
+                      section === item.id
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                  </button>
+                );
+              })}
             </div>
             <div className="hidden items-center gap-1.5 md:flex">
               {NAV_ITEMS.map((item) => {

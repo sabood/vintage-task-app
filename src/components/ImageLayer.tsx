@@ -59,17 +59,21 @@ type DragState =
   | {
       kind: "crop";
       id: string;
-      handle: "nw" | "ne" | "sw" | "se";
+      handle: "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
       startX: number;
       startY: number;
       crop: PlacedImage["crop"];
     }
-  | { kind: "resize"; id: string; handle: "se"; startX: number; startY: number; w: number; h: number }
+  | { kind: "resize"; id: string; handle: "nw" | "ne" | "sw" | "se"; startX: number; startY: number; w: number; h: number; x: number; y: number }
   | null;
 
+type CornerHandle = "nw" | "ne" | "sw" | "se";
+type EdgeHandle = "n" | "s" | "e" | "w";
+
 /**
- * Image layer over the page: insert pictures, drag to move,
- * SE handle to resize, Alt+drag (or crop handles) to crop with the cursor.
+ * Image layer over the page. Click a picture to select it (handles appear);
+ * click anywhere else (or Esc) to deselect and return to typing.
+ * Handles: corners resize, edges crop, × removes.
  */
 export function ImageLayer({
   images,
@@ -84,8 +88,7 @@ export function ImageLayer({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState>(null);
-  const cropRef = useRef<string | null>(null); // id being crop-dragged
-  const [, setTick] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const norm = (e: { clientX: number; clientY: number }): [number, number] => {
     const rect = wrapRef.current!.getBoundingClientRect();
@@ -103,8 +106,8 @@ export function ImageLayer({
     e: React.PointerEvent,
     img: PlacedImage,
     mode: "move" | "resize" | "crop",
+    handle: CornerHandle | EdgeHandle,
   ) => {
-    if (!active) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -112,13 +115,12 @@ export function ImageLayer({
     if (mode === "move") {
       dragRef.current = { kind: "move", id: img.id, startX: x, startY: y, ox: img.x, oy: img.y };
     } else if (mode === "resize") {
-      dragRef.current = { kind: "resize", id: img.id, handle: "se", startX: x, startY: y, w: img.w, h: img.h };
+      dragRef.current = { kind: "resize", id: img.id, handle: handle as CornerHandle, startX: x, startY: y, w: img.w, h: img.h, x: img.x, y: img.y };
     } else {
-      cropRef.current = img.id;
       dragRef.current = {
         kind: "crop",
         id: img.id,
-        handle: "se",
+        handle: handle as "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se",
         startX: x,
         startY: y,
         crop: { ...img.crop },
@@ -128,42 +130,55 @@ export function ImageLayer({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const st = dragRef.current;
-    if (!active || !st) return;
+    if (!st) return;
     const [x, y] = norm(e);
+    const dx = x - st.startX;
+    const dy = y - st.startY;
     if (st.kind === "move") {
       update(st.id, {
-        x: Math.min(0.98, Math.max(0, st.ox + (x - st.startX))),
-        y: Math.min(0.98, Math.max(0, st.oy + (y - st.startY))),
+        x: Math.min(0.98, Math.max(0, st.ox + dx)),
+        y: Math.min(0.98, Math.max(0, st.oy + dy)),
       });
     } else if (st.kind === "resize") {
-      update(st.id, {
-        w: Math.min(1, Math.max(0.06, st.w + (x - st.startX))),
-        h: Math.min(1, Math.max(0.04, st.h + (y - st.startY))),
-      });
+      let { x: nx, y: ny, w, h } = st;
+      if (st.handle.includes("e")) w = Math.min(1 - nx, Math.max(0.06, st.w + dx));
+      if (st.handle.includes("s")) h = Math.min(1 - ny, Math.max(0.04, st.h + dy));
+      if (st.handle.includes("w")) {
+        const right = st.x + st.w;
+        nx = Math.min(right - 0.06, Math.max(0, st.x + dx));
+        w = right - nx;
+      }
+      if (st.handle.includes("n")) {
+        const bottom = st.y + st.h;
+        ny = Math.min(bottom - 0.04, Math.max(0, st.y + dy));
+        h = bottom - ny;
+      }
+      update(st.id, { x: nx, y: ny, w, h });
     } else {
-      // crop: shrinking the visible window from the SE corner
-      const dx = x - st.startX;
-      const dy = y - st.startY;
+      // crop: pull the dragged edge/corner inward on the SOURCE image
+      const c = st.crop;
       update(st.id, {
         crop: {
-          l: st.crop.l,
-          t: st.crop.t,
-          r: Math.min(1, Math.max(st.crop.l + 0.05, st.crop.r + dx)),
-          b: Math.min(1, Math.max(st.crop.t + 0.05, st.crop.b + dy)),
+          l: st.handle.includes("w") ? Math.min(c.r - 0.05, Math.max(0, c.l + dx)) : c.l,
+          t: st.handle.includes("n") ? Math.min(c.b - 0.05, Math.max(0, c.t + dy)) : c.t,
+          r: st.handle.includes("e") ? Math.max(c.l + 0.05, Math.min(1, c.r + dx)) : c.r,
+          b: st.handle.includes("s") ? Math.max(c.t + 0.05, Math.min(1, c.b + dy)) : c.b,
         },
       });
     }
-    setTick((t) => t + 1);
   };
 
   const onPointerUp = () => {
     dragRef.current = null;
-    cropRef.current = null;
   };
 
+  // Esc deselects back to typing mode
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onActiveChange(false);
+      if (e.key === "Escape") {
+        setSelectedId(null);
+        onActiveChange(false);
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -195,10 +210,16 @@ export function ImageLayer({
           // skip unreadable files
         }
       }
-      if (next.length > 0) onChange([...images, ...next]);
+      if (next.length > 0) {
+        onChange([...images, ...next]);
+        setSelectedId(next[next.length - 1].id);
+        onActiveChange(true);
+      }
     },
-    [images, onChange],
+    [images, onChange, onActiveChange],
   );
+
+  const editing = selectedId !== null;
 
   return (
     <div
@@ -211,6 +232,13 @@ export function ImageLayer({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
+      onPointerDown={() => {
+        // clicking the paper around images exits image editing
+        if (active) {
+          setSelectedId(null);
+          onActiveChange(false);
+        }
+      }}
       onDragOver={(e) => {
         if (active) e.preventDefault();
       }}
@@ -220,79 +248,99 @@ export function ImageLayer({
         void handleImages(e.dataTransfer.files);
       }}
     >
-      {images.map((img) => (
-        <div
-          key={img.id}
-          className="group absolute shadow-md"
-          style={{
-            left: `${img.x * 100}%`,
-            top: `${img.y * 100}%`,
-            width: `${img.w * 100}%`,
-            height: `${img.h * 100}%`,
-            cursor: active ? (cropRef.current === img.id ? "crosshair" : "move") : "default",
-            pointerEvents: active ? "auto" : "none",
-          }}
-          onPointerDown={(e) => onPointerDown(e, img, "move")}
-        >
-          {/* cropped view */}
-          <img
-            src={img.src}
-            alt=""
-            draggable={false}
-            className="pointer-events-none size-full rounded-md object-cover select-none"
+      {images.map((img) => {
+        const isSelected = img.id === selectedId;
+        return (
+          <div
+            key={img.id}
+            className="group absolute shadow-md"
             style={{
-              objectPosition: "center",
-              clipPath: `inset(${img.crop.t * 100}% ${(1 - img.crop.r) * 100}% ${(1 - img.crop.b) * 100}% ${img.crop.l * 100}%)`,
-              transform: "scale(1.02)",
+              left: `${img.x * 100}%`,
+              top: `${img.y * 100}%`,
+              width: `${img.w * 100}%`,
+              height: `${img.h * 100}%`,
+              cursor: active ? "move" : "pointer",
+              pointerEvents: "auto",
+              outline: isSelected
+                ? "2px solid hsl(var(--primary))"
+                : undefined,
+              outlineOffset: 2,
+              zIndex: isSelected ? 5 : 1,
             }}
-          />
-          {active && (
-            <>
-              {/* resize handle */}
-              <span
-                role="button"
-                tabIndex={0}
-                aria-label="Resize image"
-                className="absolute -right-1.5 -bottom-1.5 z-10 size-3.5 rounded-sm border-2 border-white bg-primary shadow"
-                style={{ cursor: "nwse-resize" }}
-                onPointerDown={(e) => onPointerDown(e, img, "resize")}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") onPointerDown(e as unknown as React.PointerEvent, img, "resize");
-                }}
-              />
-              {/* crop handle */}
-              <span
-                role="button"
-                tabIndex={0}
-                aria-label="Crop image"
-                title="Drag to crop"
-                className="absolute -top-1.5 -left-1.5 z-10 size-3.5 rounded-sm border-2 border-white bg-amber-500 shadow"
-                style={{ cursor: "nwse-resize" }}
-                onPointerDown={(e) => onPointerDown(e, img, "crop")}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") onPointerDown(e as unknown as React.PointerEvent, img, "crop");
-                }}
-              />
-              {/* delete */}
-              <button
-                type="button"
-                aria-label="Remove image"
-                className="absolute -top-2 -right-2 z-10 grid size-5 place-items-center rounded-full border bg-card text-xs text-muted-foreground shadow hover:text-destructive"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChange(images.filter((i) => i.id !== img.id));
-                }}
-              >
-                ×
-              </button>
-            </>
-          )}
-        </div>
-      ))}
+            onPointerDown={(e) => {
+              e.stopPropagation(); // don't bubble to the deselect-on-paper handler
+              // select this image and enter edit mode (drags also move it)
+              setSelectedId(img.id);
+              onActiveChange(true);
+              if (isSelected) {
+                onPointerDown(e, img, "move", "se");
+              }
+            }}
+          >
+            {/* cropped view */}
+            <img
+              src={img.src}
+              alt=""
+              draggable={false}
+              className="pointer-events-none size-full rounded-md object-cover select-none"
+              style={{
+                objectPosition: "center",
+                clipPath: `inset(${img.crop.t * 100}% ${(1 - img.crop.r) * 100}% ${(1 - img.crop.b) * 100}% ${img.crop.l * 100}%)`,
+                transform: "scale(1.02)",
+              }}
+            />
+            {isSelected && (
+              <>
+                {/* corner resize handles */}
+                {(["nw", "ne", "sw", "se"] as const).map((h) => (
+                  <span
+                    key={h}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Resize image ${h}`}
+                    className={cnHandle(h)}
+                    style={{ cursor: cursorFor(h) }}
+                    onPointerDown={(e) => onPointerDown(e, img, "resize", h)}
+                  />
+                ))}
+                {/* edge crop handles */}
+                {(["n", "s", "e", "w"] as const).map((h) => (
+                  <span
+                    key={h}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Crop image ${h}`}
+                    title="Drag to crop"
+                    className={cnEdge(h)}
+                    style={{ cursor: edgeCursor(h) }}
+                    onPointerDown={(e) => onPointerDown(e, img, "crop", h)}
+                  />
+                ))}
+                {/* delete */}
+                <button
+                  type="button"
+                  aria-label="Remove image"
+                  className="absolute -top-2.5 -right-2.5 z-10 grid size-5 place-items-center rounded-full border bg-card text-xs text-muted-foreground shadow hover:text-destructive"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChange(images.filter((i) => i.id !== img.id));
+                    setSelectedId(null);
+                  }}
+                >
+                  ×
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })}
 
       {active && (
-        <label className="absolute top-2 right-2 z-30 flex cursor-pointer items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-xs font-medium shadow-md hover:bg-accent">
+        <label
+          className="absolute top-2 right-2 z-30 flex cursor-pointer items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-xs font-medium shadow-md hover:bg-accent"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           + Add image
           <input
             type="file"
@@ -308,4 +356,34 @@ export function ImageLayer({
       )}
     </div>
   );
+}
+
+/* handle helpers */
+
+function cnHandle(h: CornerHandle) {
+  const pos = {
+    nw: "-top-1.5 -left-1.5",
+    ne: "-top-1.5 -right-1.5",
+    sw: "-bottom-1.5 -left-1.5",
+    se: "-bottom-1.5 -right-1.5",
+  }[h];
+  return `absolute ${pos} z-10 size-3.5 rounded-sm border-2 border-white bg-primary shadow`;
+}
+
+function cursorFor(h: CornerHandle) {
+  return { nw: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", se: "nwse-resize" }[h];
+}
+
+function cnEdge(h: EdgeHandle) {
+  const pos = {
+    n: "-top-1 left-1/2 -translate-x-1/2 h-2.5 w-6",
+    s: "-bottom-1 left-1/2 -translate-x-1/2 h-2.5 w-6",
+    e: "-right-1 top-1/2 -translate-y-1/2 h-6 w-2.5",
+    w: "-left-1 top-1/2 -translate-y-1/2 h-6 w-2.5",
+  }[h];
+  return `absolute ${pos} z-10 rounded-sm border-2 border-white bg-amber-500 shadow`;
+}
+
+function edgeCursor(h: EdgeHandle) {
+  return { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" }[h];
 }

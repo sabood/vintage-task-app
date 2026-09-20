@@ -13,23 +13,28 @@ import {
   toEditorHtml,
 } from "@/components/RichTextEditor";
 import {
-  PEN_SIZES,
-  PEN_COLORS,
   DrawingCanvas,
+  type PenTool,
   parseStrokes,
 } from "@/components/DrawingCanvas";
 import {
   ImageLayer,
   parseImages,
 } from "@/components/ImageLayer";
+import ColorPalette, {
+  PEN_PALETTE,
+} from "@/components/ColorPalette";
 import {
   Image as ImageIcon,
   Loader2,
+  MoveUpRight,
+  Pencil,
   PencilLine,
   Plus,
   StickyNote,
+  Eraser,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -82,8 +87,10 @@ function PageCanvas({
   const [savedTick, setSavedTick] = useState(0);
 
   const [drawMode, setDrawMode] = useState(false);
-  const [penColor, setPenColor] = useState(PEN_COLORS[0]);
-  const [penWidth, setPenWidth] = useState(PEN_SIZES[1].width);
+  const [penColor, setPenColor] = useState("#1e1e2e");
+  const [penWidth, setPenWidth] = useState(3);
+  const [penTool, setPenTool] = useState<PenTool>("pen");
+  const [inkOpen, setInkOpen] = useState(false);
   const [strokes, setStrokes] = useState(() => parseStrokes(page.drawing));
 
   const [imageMode, setImageMode] = useState(false);
@@ -227,41 +234,99 @@ function PageCanvas({
               <PencilLine className="size-3.5" />
               Drawing
             </span>
-            <div className="flex items-center gap-1">
-              {PEN_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Pen color ${color}`}
-                  aria-pressed={penColor === color}
-                  className={cn(
-                    "size-5 rounded-full ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110",
-                    penColor === color ? "ring-primary/60" : "ring-transparent",
-                  )}
-                  style={{ backgroundColor: color }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setPenColor(color)}
-                />
-              ))}
-            </div>
+
+            {/* tools */}
             <div className="flex items-center gap-0.5">
-              {PEN_SIZES.map((s) => (
-                <button
-                  key={s.label}
-                  type="button"
-                  aria-label={`${s.label} pen`}
-                  aria-pressed={penWidth === s.width}
-                  className={cn(
-                    "grid h-7 w-8 place-items-center rounded-lg text-xs font-medium transition-colors",
-                    penWidth === s.width
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setPenWidth(s.width)}
-                />
-              ))}
+              <button
+                type="button"
+                aria-label="Pen tool"
+                title="Pen"
+                aria-pressed={penTool === "pen"}
+                className={cn(
+                  "grid size-7 place-items-center rounded-lg transition-colors",
+                  penTool === "pen"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+                onClick={() => setPenTool("pen")}
+              >
+                <Pencil className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Arrow tool"
+                title="Arrow — drag from tail to head"
+                aria-pressed={penTool === "arrow"}
+                className={cn(
+                  "grid size-7 place-items-center rounded-lg transition-colors",
+                  penTool === "arrow"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+                onClick={() => setPenTool("arrow")}
+              >
+                <MoveUpRight className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Eraser tool"
+                title="Eraser — drag over strokes to remove them"
+                aria-pressed={penTool === "eraser"}
+                className={cn(
+                  "grid size-7 place-items-center rounded-lg transition-colors",
+                  penTool === "eraser"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+                onClick={() => setPenTool("eraser")}
+              >
+                <Eraser className="size-4" />
+              </button>
             </div>
+
+            <span className="h-5 w-px bg-border" />
+
+            {/* color: current swatch opens full palette */}
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Drawing color"
+                title="Drawing color"
+                className="size-6 rounded-full border-2 border-white shadow ring-2 ring-transparent ring-offset-2 ring-offset-card transition-transform hover:scale-110"
+                style={{ backgroundColor: penColor }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setInkOpen((o) => !o)}
+              />
+              <ColorPalette
+                open={inkOpen}
+                onOpenChange={setInkOpen}
+                colors={PEN_PALETTE}
+                value={penColor}
+                onPick={setPenColor}
+              />
+            </div>
+
+            <span className="h-5 w-px bg-border" />
+
+            {/* thickness slider */}
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={1}
+                max={24}
+                value={penWidth}
+                aria-label="Line thickness"
+                title="Line thickness"
+                onChange={(e) => setPenWidth(Number(e.target.value))}
+                className="h-1.5 w-28 cursor-pointer appearance-none rounded-full bg-accent accent-primary"
+              />
+              <span className="w-6 text-center text-xs tabular-nums text-muted-foreground">
+                {penWidth}
+                </span>
+            </div>
+
+            <span className="h-5 w-px bg-border" />
+
             <Button
               type="button"
               variant="outline"
@@ -290,7 +355,7 @@ function PageCanvas({
               <ImageIcon className="size-3.5" />
               Images
             </span>
-            <span>Drag images to move · corner handle to resize · amber handle to crop · × to remove</span>
+            <span>Click a picture to edit · click the page to keep typing</span>
           </div>
         )}
 
@@ -307,6 +372,7 @@ function PageCanvas({
             active={drawMode}
             penColor={penColor}
             penWidth={penWidth}
+            tool={penTool}
           />
           <div className={drawMode || imageMode ? "pointer-events-none opacity-60" : ""}>
             <input
