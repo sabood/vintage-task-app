@@ -39,6 +39,13 @@ const schema = defineSchema(
       isCompleted: v.boolean(), // false until the task is checked off
     }).index("by_owner", ["ownerId"]),
 
+    // the student's notes. one row per note.
+    notes: defineTable({
+      ownerId: v.id("users"), // the author of the note
+      title: v.string(),
+      body: v.string(),
+    }).index("by_owner", ["ownerId"]),
+
     // add other tables here
 
     // tableName: defineTable({
