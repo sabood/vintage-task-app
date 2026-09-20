@@ -25,6 +25,7 @@ import {
   Italic,
   List,
   ListOrdered,
+  Palette,
   Redo2,
   Strikethrough,
   Subscript,
@@ -47,18 +48,27 @@ const FONT_FAMILIES: { label: string; stack: string; css: string }[] = [
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 30, 36];
 
-const ACCENT_SWATCHES: { value: NoteColor; label: string; dot: string }[] = [
-  { value: "default", label: "Plain", dot: "bg-muted-foreground/60" },
-  { value: "indigo", label: "Indigo", dot: "bg-indigo-500" },
-  { value: "violet", label: "Violet", dot: "bg-violet-500" },
-  { value: "sky", label: "Sky", dot: "bg-sky-500" },
-  { value: "teal", label: "Teal", dot: "bg-teal-500" },
-  { value: "emerald", label: "Emerald", dot: "bg-emerald-500" },
-  { value: "amber", label: "Amber", dot: "bg-amber-500" },
-  { value: "orange", label: "Orange", dot: "bg-orange-500" },
-  { value: "rose", label: "Rose", dot: "bg-rose-500" },
-  { value: "pink", label: "Pink", dot: "bg-pink-500" },
+const ACCENT_SWATCHES: { value: NoteColor; label: string; hex: string }[] = [
+  { value: "default", label: "Plain", hex: "#94a3b8" },
+  { value: "indigo", label: "Indigo", hex: "#6366f1" },
+  { value: "violet", label: "Violet", hex: "#8b5cf6" },
+  { value: "sky", label: "Sky", hex: "#0ea5e9" },
+  { value: "teal", label: "Teal", hex: "#14b8a6" },
+  { value: "emerald", label: "Emerald", hex: "#10b981" },
+  { value: "amber", label: "Amber", hex: "#f59e0b" },
+  { value: "orange", label: "Orange", hex: "#f97316" },
+  { value: "rose", label: "Rose", hex: "#f43f5e" },
+  { value: "pink", label: "Pink", hex: "#ec4899" },
 ];
+
+/** Same swatches as a palette the popover can render. */
+const ACCENT_COLORS = ACCENT_SWATCHES.map((s) => ({
+  value: s.hex,
+  label: s.label,
+}));
+
+const accentHex = (c: NoteColor) =>
+  ACCENT_SWATCHES.find((s) => s.value === c)?.hex ?? ACCENT_SWATCHES[0].hex;
 
 function RibbonButton({
   label,
@@ -132,6 +142,7 @@ export default function EditorRibbon({
   const [size, setSize] = useState(16);
   const [inkOpen, setInkOpen] = useState(false);
   const [hlOpen, setHlOpen] = useState(false);
+  const [accentOpen, setAccentOpen] = useState(false);
 
   const grow = () => {
     const next = Math.min(72, Math.round(size * 1.2) + 1);
@@ -257,6 +268,36 @@ export default function EditorRibbon({
           />
         </div>
 
+        {/* notebook accent (page theme) with palette */}
+        <div className="relative flex shrink-0 items-center">
+          <RibbonButton
+            label="Notebook accent"
+            active={accentOpen}
+            onClick={() => setAccentOpen((o) => !o)}
+          >
+            <span className="relative">
+              <Palette className="size-4" />
+              <span
+                className="absolute inset-x-0.5 bottom-0 h-1 rounded-sm"
+                style={{ backgroundColor: accentHex(accent) }}
+              />
+            </span>
+          </RibbonButton>
+          <ColorPalette
+            open={accentOpen}
+            onOpenChange={setAccentOpen}
+            colors={ACCENT_COLORS}
+            value={accentHex(accent)}
+            allowCustom={false}
+            onPick={(hex) => {
+              const found = ACCENT_SWATCHES.find(
+                (s) => s.hex.toLowerCase() === hex.toLowerCase(),
+              );
+              onAccent(found?.value ?? "default");
+            }}
+          />
+        </div>
+
         {/* lists */}
         <RibbonDivider />
         <RibbonButton label="Bullet list" active={state.ul} onClick={() => onFormat("insertUnorderedList")}>
@@ -353,27 +394,6 @@ export default function EditorRibbon({
           <Flag className="size-3.5" />
           Flag
         </button>
-
-        {/* notebook accent (page-level) */}
-        <div className="flex shrink-0 items-center gap-1">
-          <span className="text-xs text-muted-foreground">Accent</span>
-          {ACCENT_SWATCHES.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              aria-label={`${c.label} accent`}
-              title={`${c.label} accent`}
-              aria-pressed={accent === c.value}
-              className={cn(
-                "size-4 shrink-0 rounded-[4px] ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110",
-                c.dot,
-                accent === c.value ? "ring-primary/60" : "ring-transparent",
-              )}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onAccent(c.value)}
-            />
-          ))}
-        </div>
 
         {/* draw mode toggle */}
         <button
