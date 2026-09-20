@@ -115,10 +115,26 @@ export const listPages = query({
   },
 });
 
-/** Create a page at the end of a notebook. Returns the new page id. */
+/** One page by id (ownership-checked), for tab lookups. */
+export const getPage = query({
+  args: { id: v.id("notePages") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const page = await ctx.db.get(id);
+    if (page === null || page.ownerId !== userId) return null;
+    return page;
+  },
+});
+
+/** Create a page (or sub-page with parentId) at the end of its level. Returns the new page id. */
 export const addPage = mutation({
-  args: { notebookId: v.id("notebooks"), title: v.optional(v.string()) },
-  handler: async (ctx, { notebookId, title }) => {
+  args: {
+    notebookId: v.id("notebooks"),
+    title: v.optional(v.string()),
+    parentId: v.optional(v.id("notePages")),
+  },
+  handler: async (ctx, { notebookId, title, parentId }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in to create a page.");
     const nb = await ctx.db.get(notebookId);
@@ -128,12 +144,16 @@ export const addPage = mutation({
       .query("notePages")
       .withIndex("by_notebook", (q) => q.eq("notebookId", notebookId))
       .collect();
-    const maxOrder = existing.reduce((m, p) => Math.max(m, p.order ?? 0), 0);
+    const siblings = parentId
+      ? existing.filter((p) => p.parentId === parentId)
+      : existing.filter((p) => !p.parentId);
+    const maxOrder = siblings.reduce((m, p) => Math.max(m, p.order ?? 0), 0);
     return await ctx.db.insert("notePages", {
       ownerId: userId,
       notebookId,
       title: title?.trim() || "Untitled page",
       body: "",
+      parentId,
       numbered: false,
       font: "sans",
       color: "default",
@@ -143,12 +163,58 @@ export const addPage = mutation({
   },
 });
 
-/** Update a page: title, body, or formatting. All fields optional. */
+/** Delete a page, its sub-pages, and detach tasks flagged from it. */
+export const removePage = mutation({
+  args: { id: v.id("notePages") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const page = await ctx.db.get(id);
+    if (page === null) throw new Error("That page no longer exists.");
+    if (page.ownerId !== userId) throw new Error("That page belongs to another account.");
+    const all = await ctx.db
+      .query("notePages")
+      .withIndex("by_notebook", (q) => q.eq("notebookId", page.notebookId))
+      .collect();
+    // collect descendant ids (sub-pages) breadth-first
+    const toDelete: string[] = [id];
+    let frontier = [id];
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      for (const pid of frontier) {
+        for (const p of all) {
+          if (p.parentId === pid) {
+            next.push(p._id);
+          }
+        }
+      }
+      toDelete.push(...next);
+      frontier = next;
+    }
+    // detach tasks flagged from any deleted page
+    const allTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    for (const t of allTasks) {
+      if (t.sourcePageId && toDelete.includes(t.sourcePageId)) {
+        await ctx.db.patch(t._id, { sourcePageId: undefined });
+      }
+    }
+    for (const pid of toDelete) {
+      const doc = await ctx.db.get(pid as any);
+      if (doc !== null) await ctx.db.delete(doc._id);
+    }
+  },
+});
+
+/** Update a page: title, body, drawing, or formatting. All fields optional. */
 export const updatePage = mutation({
   args: {
     id: v.id("notePages"),
     title: v.optional(v.string()),
     body: v.optional(v.string()),
+    drawing: v.optional(v.string()),
     numbered: v.optional(v.boolean()),
     font: v.optional(noteFontValidator),
     color: v.optional(noteColorValidator),
@@ -170,18 +236,5 @@ export const updatePage = mutation({
     if (patch.body !== undefined && patch.body.length > MAX_BODY_LENGTH)
       throw new Error("That page is too long.");
     await ctx.db.patch(id, patch);
-  },
-});
-
-/** Delete a page. */
-export const removePage = mutation({
-  args: { id: v.id("notePages") },
-  handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Sign in first.");
-    const page = await ctx.db.get(id);
-    if (page === null) throw new Error("That page no longer exists.");
-    if (page.ownerId !== userId) throw new Error("That page belongs to another account.");
-    await ctx.db.delete(id);
   },
 });

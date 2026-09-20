@@ -68,6 +68,14 @@ const schema = defineSchema(
       ownerId: v.id("users"), // the student who wrote the entry
       text: v.string(), // the task itself, e.g. "Read Ch. 4 of Biology"
       isCompleted: v.boolean(), // false until the task is checked off
+      listId: v.optional(v.id("taskLists")), // which named list it belongs to
+      sourcePageId: v.optional(v.id("notePages")), // set when flagged from a note
+    }).index("by_owner", ["ownerId"]),
+
+    // named task lists (e.g. "Homework", "Chores")
+    taskLists: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
     }).index("by_owner", ["ownerId"]),
 
     // notebooks: the top level of the notes workspace (OneNote-style)
@@ -83,6 +91,8 @@ const schema = defineSchema(
       notebookId: v.id("notebooks"),
       title: v.string(),
       body: v.string(),
+      parentId: v.optional(v.id("notePages")), // set when this is a sub-page
+      drawing: v.optional(v.string()), // ink strokes as JSON (normalized coords)
       numbered: v.optional(v.boolean()), // number each line of the body
       font: v.optional(noteFontValidator), // body font family
       color: v.optional(noteColorValidator), // notebook color label
