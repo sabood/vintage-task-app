@@ -1,8 +1,16 @@
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import type { NoteColor, NoteFont, NoteInk } from "@/convex/schema";
+import type { NoteColor, NoteFont } from "@/convex/schema";
 import { Button } from "@/components/ui/button";
 import {
+  formatSelection,
+  INK_COMMAND_COLORS,
+  RichTextEditor,
+  stripHtml,
+  toEditorHtml,
+} from "@/components/RichTextEditor";
+import {
+  Bold,
   ListOrdered,
   Loader2,
   Notebook,
@@ -27,15 +35,6 @@ const FONTS: { value: NoteFont; label: string; className: string }[] = [
   { value: "hand", label: "Hand", className: "font-hand" },
 ];
 
-const INKS: { value: NoteInk; label: string; dot: string }[] = [
-  { value: "default", label: "Ink", dot: "bg-foreground/70" },
-  { value: "indigo", label: "Indigo", dot: "bg-primary" },
-  { value: "emerald", label: "Emerald", dot: "bg-emerald-600" },
-  { value: "amber", label: "Amber", dot: "bg-amber-600" },
-  { value: "rose", label: "Rose", dot: "bg-rose-600" },
-  { value: "sky", label: "Sky", dot: "bg-sky-600" },
-];
-
 const ACCENTS: { value: NoteColor; label: string; dot: string }[] = [
   { value: "default", label: "Plain", dot: "bg-muted-foreground/60" },
   { value: "indigo", label: "Indigo", dot: "bg-primary" },
@@ -43,6 +42,15 @@ const ACCENTS: { value: NoteColor; label: string; dot: string }[] = [
   { value: "amber", label: "Amber", dot: "bg-amber-500" },
   { value: "rose", label: "Rose", dot: "bg-rose-500" },
   { value: "sky", label: "Sky", dot: "bg-sky-500" },
+];
+
+const INKS: { value: string; label: string; dot: string }[] = [
+  { value: "default", label: "Default ink", dot: "bg-foreground/70" },
+  { value: "indigo", label: "Indigo ink", dot: "bg-indigo-500" },
+  { value: "emerald", label: "Emerald ink", dot: "bg-emerald-500" },
+  { value: "amber", label: "Amber ink", dot: "bg-amber-500" },
+  { value: "rose", label: "Rose ink", dot: "bg-rose-500" },
+  { value: "sky", label: "Sky ink", dot: "bg-sky-500" },
 ];
 
 // Static maps so Tailwind can statically extract the custom utilities
@@ -53,15 +61,6 @@ const ACCENT_CLASS: Record<NoteColor, string> = {
   amber: "note-amber",
   rose: "note-rose",
   sky: "note-sky",
-};
-
-const INK_TEXT_CLASS: Record<NoteInk, string> = {
-  default: "",
-  indigo: "text-primary",
-  emerald: "text-emerald-700 dark:text-emerald-400",
-  amber: "text-amber-700 dark:text-amber-400",
-  rose: "text-rose-700 dark:text-rose-400",
-  sky: "text-sky-700 dark:text-sky-400",
 };
 
 const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
@@ -75,6 +74,15 @@ const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
 
 function fontClass(font: NoteFont | undefined): string {
   return FONTS.find((f) => f.value === font)?.className ?? "font-sans";
+}
+
+/** Resolve the theme's default text color for "default" ink selection. */
+function resolveDefaultInk(): string {
+  if (typeof window === "undefined") return "#1e1e2e";
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue("--foreground")
+    .trim();
+  return v || "#1e1e2e";
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
@@ -196,7 +204,7 @@ function PageIndex({
           <button
             type="button"
             onClick={() => onSelect(page._id)}
-            className={`flex w-32 flex-col gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-colors ${
+            className={`flex w-36 flex-col gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-colors ${
               activeId === page._id
                 ? "border-primary/40 bg-card shadow-sm"
                 : "border-border/70 bg-card/60 hover:bg-card"
@@ -210,6 +218,9 @@ function PageIndex({
               Page {i + 1}
             </span>
             <span className="line-clamp-1 text-xs font-medium">{page.title}</span>
+            <span className="line-clamp-1 text-[10px] text-muted-foreground/70">
+              {stripHtml(page.body).slice(0, 40) || "Empty page"}
+            </span>
           </button>
           <span className="absolute -top-1 -right-1 flex gap-0.5 opacity-0 transition-opacity group-focus-within/pg:opacity-100 group-hover/pg:opacity-100">
             <button
@@ -244,27 +255,27 @@ function PageIndex({
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
-/* Page canvas: direct inline editing, autosaved — no popup                 */
+/* Page canvas: direct rich-text editing, autosaved — no popup              */
 /* ──────────────────────────────────────────────────────────────────────── */
 
 function PageCanvas({ page }: { page: Doc<"notePages"> }) {
   const updatePage = useMutation(api.notebooks.updatePage);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [title, setTitle] = useState(page.title);
-  const [body, setBody] = useState(page.body);
+  const [body, setBody] = useState(() => toEditorHtml(page.body));
   const [numbered, setNumbered] = useState(page.numbered ?? false);
   const [font, setFont] = useState<NoteFont>(page.font ?? "sans");
-  const [ink, setInk] = useState<NoteInk>(page.inkColor ?? "default");
   const [accent, setAccent] = useState<NoteColor>(page.color ?? "default");
+  const [boldActive, setBoldActive] = useState(false);
   const [savedTick, setSavedTick] = useState(0);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleSave = (patch: {
     title?: string;
     body?: string;
     numbered?: boolean;
     font?: NoteFont;
-    inkColor?: NoteInk;
     color?: NoteColor;
   }) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -285,12 +296,37 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
     };
   }, []);
 
-  const bodyLines = body.split("\n");
-  const inkText = INK_TEXT_CLASS[ink];
+  const handleBodyChange = (html: string) => {
+    setBody(html);
+    scheduleSave({ body: html });
+  };
+
+  /** Toolbar formatting: apply to the selected letters only, then persist. */
+  const applyFormat = (cmd: "bold" | "foreColor", arg?: string) => {
+    formatSelection(cmd, arg);
+    setTimeout(() => {
+      if (editorRef.current) {
+        handleBodyChange(editorRef.current.innerHTML);
+      }
+      try {
+        setBoldActive(document.queryCommandState("bold"));
+      } catch {
+        // ignore
+      }
+    }, 0);
+  };
+
+  const handleInk = (inkValue: string) => {
+    const color =
+      inkValue === "default"
+        ? resolveDefaultInk()
+        : (INK_COMMAND_COLORS[inkValue] ?? resolveDefaultInk());
+    applyFormat("foreColor", color);
+  };
 
   return (
     <div
-      className={`${ACCENT_CLASS[accent]} note-card flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-2xl border bg-card shadow-sm`}
+      className={`${ACCENT_CLASS[accent]} note-card flex min-h-[30rem] flex-1 flex-col overflow-hidden rounded-2xl border bg-card shadow-sm`}
     >
       {/* formatting toolbar */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border/60 px-4 py-2.5">
@@ -307,6 +343,7 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setFont(f.value);
                 scheduleSave({ font: f.value });
@@ -317,21 +354,32 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
           ))}
         </div>
 
+        <button
+          type="button"
+          aria-label="Bold"
+          aria-pressed={boldActive}
+          className={`grid size-7 place-items-center rounded-lg transition-colors ${
+            boldActive
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => applyFormat("bold")}
+        >
+          <Bold className="size-4" />
+        </button>
+
         <div className="flex items-center gap-1">
           <Palette className="mr-0.5 size-3.5 text-muted-foreground" />
           {INKS.map((i) => (
             <button
               key={i.value}
               type="button"
-              aria-label={`${i.label} ink color`}
-              aria-pressed={ink === i.value}
-              className={`size-5 rounded-full ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110 ${i.dot} ${
-                ink === i.value ? "ring-primary/60" : "ring-transparent"
-              }`}
-              onClick={() => {
-                setInk(i.value);
-                scheduleSave({ inkColor: i.value });
-              }}
+              aria-label={`Apply ${i.label} to selection`}
+              title={`Apply ${i.label} to selection`}
+              className={`size-5 rounded-full ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110 ${i.dot} ring-transparent`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleInk(i.value)}
             />
           ))}
         </div>
@@ -347,6 +395,7 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
               className={`size-4 rounded-[4px] ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110 ${c.dot} ${
                 accent === c.value ? "ring-primary/60" : "ring-transparent"
               }`}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setAccent(c.value);
                 scheduleSave({ color: c.value });
@@ -363,6 +412,7 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-accent hover:text-foreground"
           }`}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             const next = !numbered;
             setNumbered(next);
@@ -379,7 +429,7 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
       </div>
 
       {/* paper */}
-      <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-6">
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-8">
         <input
           value={title}
           onChange={(e) => {
@@ -389,37 +439,17 @@ function PageCanvas({ page }: { page: Doc<"notePages"> }) {
           maxLength={160}
           placeholder="Page title"
           aria-label="Page title"
-          className={`w-full bg-transparent font-display text-2xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/40 ${inkText}`}
+          className="w-full bg-transparent font-display text-2xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/40"
         />
         <div className="mt-2 mb-4 h-px w-12 bg-primary/50" />
-        <div className="flex min-h-0 flex-1">
-          {numbered && (
-            <div
-              aria-hidden
-              className={`mr-1 w-6 shrink-0 border-r border-border/60 pt-0.5 text-right ${fontClass(font)} ${inkText}`}
-            >
-              {bodyLines.map((_, i) => (
-                <div
-                  key={i}
-                  className="note-line-num pr-1.5 text-[11px] leading-6 opacity-60"
-                >
-                  {i + 1}.
-                </div>
-              ))}
-            </div>
-          )}
-          <textarea
-            value={body}
-            onChange={(e) => {
-              setBody(e.target.value);
-              scheduleSave({ body: e.target.value });
-            }}
-            maxLength={20000}
-            aria-label="Page body"
-            placeholder="Start writing…"
-            className={`min-h-56 w-full flex-1 resize-none bg-transparent leading-6 outline-none placeholder:text-muted-foreground/40 ${fontClass(font)} ${inkText}`}
-          />
-        </div>
+        <RichTextEditor
+          value={body}
+          onChange={handleBodyChange}
+          editorRef={editorRef}
+          placeholder="Start writing… select letters and use Bold or the ink colors."
+          numbered={numbered}
+          fontClass={fontClass(font)}
+        />
       </div>
     </div>
   );
