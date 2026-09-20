@@ -68,10 +68,10 @@ export const removeList = mutation({
   },
 });
 
-/** Tasks, optionally filtered to one list (undefined listId = default list). */
+/** All tasks for the signed-in user, newest first (filtered client-side). */
 export const list = query({
-  args: { listId: v.optional(v.id("taskLists")) },
-  handler: async (ctx, { listId }) => {
+  args: {},
+  handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) {
       return [];
@@ -80,10 +80,7 @@ export const list = query({
       .query("tasks")
       .withIndex("by_owner", (q) => q.eq("ownerId", userId))
       .collect();
-    const filtered = listId
-      ? tasks.filter((t) => t.listId === listId)
-      : tasks.filter((t) => !t.listId);
-    return filtered.sort((a, b) => b._creationTime - a._creationTime);
+    return tasks.sort((a, b) => b._creationTime - a._creationTime);
   },
 });
 

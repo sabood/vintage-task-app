@@ -5,21 +5,39 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { AnimatePresence, motion } from "framer-motion";
-import { Inbox, Loader2, Plus } from "lucide-react";
+import {
+  Flag,
+  Inbox,
+  ListX,
+  Loader2,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+type ListId = Id<"taskLists">;
 
 export default function TasksPanel() {
-  const tasks = useQuery(api.tasks.list);
+  const allTasks = useQuery(api.tasks.list);
+  const lists = useQuery(api.tasks.listLists);
   const addTask = useMutation(api.tasks.add);
   const toggleTask = useMutation(api.tasks.toggle);
+  const addList = useMutation(api.tasks.addList);
+  const renameList = useMutation(api.tasks.renameList);
+  const removeList = useMutation(api.tasks.removeList);
 
+  const [activeListId, setActiveListId] = useState<ListId | null>(null);
   const [draft, setDraft] = useState("");
   const [isAdding, setIsAdding] = useState(false);
 
-  const entries = tasks ?? [];
-  const doneCount = entries.filter((t) => t.isCompleted).length;
+  const tasks = (allTasks ?? []).filter((t) =>
+    activeListId ? t.listId === activeListId : !t.listId,
+  );
+  const doneCount = tasks.filter((t) => t.isCompleted).length;
+  const activeList = (lists ?? []).find((l) => l._id === activeListId) ?? null;
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -27,7 +45,7 @@ export default function TasksPanel() {
     if (!text || isAdding) return;
     setIsAdding(true);
     try {
-      await addTask({ text });
+      await addTask({ text, listId: activeListId ?? undefined });
       setDraft("");
     } catch (error) {
       toast.error(
@@ -43,21 +61,120 @@ export default function TasksPanel() {
       await toggleTask({ id });
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not update that task.",
+        error instanceof Error ? error.message : "Could not update that task.",
       );
+    }
+  };
+
+  const handleNewList = async () => {
+    const name = window.prompt("List name", "My list");
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) {
+      toast.error("Give the list a name.");
+      return;
+    }
+    try {
+      const id = await addList({ name: clean });
+      setActiveListId(id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create list.");
+    }
+  };
+
+  const handleRenameList = async (list: { _id: ListId; name: string }) => {
+    const name = window.prompt("Rename list", list.name);
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) return;
+    try {
+      await renameList({ id: list._id, name: clean });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't rename list.");
+    }
+  };
+
+  const handleDeleteList = async (list: { _id: ListId; name: string }) => {
+    if (!window.confirm(`Delete “${list.name}”? Its tasks move to the default list.`))
+      return;
+    try {
+      await removeList({ id: list._id });
+      if (activeListId === list._id) setActiveListId(null);
+      toast.success("List deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete list.");
     }
   };
 
   return (
     <div>
-      {/* ── Stats ─────────────────────────────────────────────────── */}
-      <section className="grid grid-cols-3 gap-3">
+      {/* ── List tabs ───────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setActiveListId(null)}
+          className={cn(
+            "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+            activeListId === null
+              ? "border-primary/40 bg-primary/10 text-primary"
+              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          All tasks
+        </button>
+        {(lists ?? []).map((list) => (
+          <span key={list._id} className="group/l relative inline-flex">
+            <button
+              type="button"
+              onClick={() => setActiveListId(list._id)}
+              className={cn(
+                "rounded-full border px-3.5 py-1.5 pr-7 text-sm font-medium transition-colors",
+                activeListId === list._id
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {list.name}
+            </button>
+            <span
+              className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-focus-within/l:opacity-100 group-hover/l:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                aria-label={`Rename list “${list.name}”`}
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => handleRenameList(list)}
+              >
+                <Pencil className="size-3" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete list “${list.name}”`}
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => handleDeleteList(list)}
+              >
+                <ListX className="size-3" />
+              </button>
+            </span>
+          </span>
+        ))}
+        <button
+          type="button"
+          onClick={handleNewList}
+          className="flex items-center gap-1 rounded-full border border-dashed px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <Plus className="size-3.5" />
+          New list
+        </button>
+      </div>
+
+      {/* ── Stats ───────────────────────────────────────────────────── */}
+      <section className="mt-4 grid grid-cols-3 gap-3">
         {[
-          { label: "Tasks", value: entries.length },
+          { label: activeList ? activeList.name : "Tasks", value: tasks.length },
           { label: "Completed", value: doneCount },
-          { label: "Open", value: entries.length - doneCount },
+          { label: "Open", value: tasks.length - doneCount },
         ].map((stat) => (
           <div
             key={stat.label}
@@ -66,20 +183,24 @@ export default function TasksPanel() {
             <p className="font-display text-2xl font-semibold tabular-nums">
               {stat.value}
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {stat.label}
             </p>
           </div>
         ))}
       </section>
 
-      {/* ── Add a task ────────────────────────────────────────────── */}
-      <form onSubmit={handleAdd} className="mt-6 flex gap-2">
+      {/* ── Add a task ──────────────────────────────────────────────── */}
+      <form onSubmit={handleAdd} className="mt-4 flex gap-2">
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={280}
-          placeholder="Add a task, e.g. “Read Ch. 4 of Biology”"
+          placeholder={
+            activeList
+              ? `Add to “${activeList.name}”…`
+              : "Add a task, e.g. “Read Ch. 4 of Biology”"
+          }
           aria-label="New task"
           className="h-11 flex-1 rounded-xl bg-card shadow-sm placeholder:text-muted-foreground/70"
         />
@@ -97,25 +218,27 @@ export default function TasksPanel() {
         </Button>
       </form>
 
-      {/* ── Task list ─────────────────────────────────────────────── */}
+      {/* ── Task list ───────────────────────────────────────────────── */}
       <section className="mt-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        {tasks === undefined ? (
+        {allTasks === undefined ? (
           <div className="flex items-center justify-center gap-2 px-5 py-14 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             Loading your tasks…
           </div>
-        ) : entries.length === 0 ? (
+        ) : tasks.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <Inbox className="mx-auto size-8 text-muted-foreground/40" />
-            <p className="mt-3 font-medium">No tasks yet</p>
+            <p className="mt-3 font-medium">Nothing here</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Add your first task above to get started.
+              {activeList
+                ? `Add your first task to “${activeList.name}”.`
+                : "Add your first task above, or flag text from a note."}
             </p>
           </div>
         ) : (
           <ul className="divide-y divide-border/70">
             <AnimatePresence initial={false}>
-              {entries.map((task) => (
+              {tasks.map((task) => (
                 <motion.li
                   key={task._id}
                   layout
@@ -136,14 +259,22 @@ export default function TasksPanel() {
                     className="size-5 shrink-0 rounded-full border-2 border-border data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground [&_svg]:size-3"
                   />
                   <span
-                    className={`flex-1 text-[15px] leading-relaxed transition-colors ${
-                      task.isCompleted
-                        ? "text-muted-foreground line-through"
-                        : ""
-                    }`}
+                    className={cn(
+                      "flex-1 text-[15px] leading-relaxed transition-colors",
+                      task.isCompleted && "text-muted-foreground line-through",
+                    )}
                   >
                     {task.text}
                   </span>
+                  {task.sourcePageId && (
+                    <Badge
+                      variant="secondary"
+                      className="hidden gap-1 rounded-full bg-amber-500/10 px-2 text-amber-700 sm:inline-flex dark:bg-amber-500/15 dark:text-amber-400"
+                    >
+                      <Flag className="size-3" />
+                      From note
+                    </Badge>
+                  )}
                   {task.isCompleted && (
                     <Badge
                       variant="secondary"

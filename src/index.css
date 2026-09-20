@@ -159,6 +159,15 @@
   font-style: italic;
 }
 
+/* flagged text → task */
+.rich-editor mark.flag-mark {
+  background-color: color-mix(in oklab, #f59e0b 30%, transparent);
+  border-bottom: 2px solid #f59e0b;
+  color: inherit;
+  padding: 0 0.1em;
+  cursor: pointer;
+}
+
 /* CHANGE VALUES FOR THEME — Modern: crisp neutrals with an indigo accent */
 :root {
   --radius: 0.75rem;

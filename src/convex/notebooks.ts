@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 // page formatting: body font family
@@ -177,10 +178,10 @@ export const removePage = mutation({
       .withIndex("by_notebook", (q) => q.eq("notebookId", page.notebookId))
       .collect();
     // collect descendant ids (sub-pages) breadth-first
-    const toDelete: string[] = [id];
-    let frontier = [id];
+    const toDelete: Id<"notePages">[] = [id];
+    let frontier: Id<"notePages">[] = [id];
     while (frontier.length > 0) {
-      const next: string[] = [];
+      const next: Id<"notePages">[] = [];
       for (const pid of frontier) {
         for (const p of all) {
           if (p.parentId === pid) {

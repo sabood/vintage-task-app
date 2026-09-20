@@ -31,11 +31,12 @@ export default function Dashboard() {
   // ── Notes tree state (rendered inside the side menu) ───────────────
   const notebooks = useQuery(api.notebooks.listNotebooks);
   const addNotebook = useMutation(api.notebooks.addNotebook);
+  const renameNotebook = useMutation(api.notebooks.renameNotebook);
   const removeNotebook = useMutation(api.notebooks.removeNotebook);
   const addPage = useMutation(api.notebooks.addPage);
-  const renameNotebook = useMutation(api.notebooks.renameNotebook);
   const updatePageRemote = useMutation(api.notebooks.updatePage);
   const removePage = useMutation(api.notebooks.removePage);
+  const addTask = useMutation(api.tasks.add);
 
   const nbList = notebooks ?? [];
   const [activeNotebookId, setActiveNotebookId] = useState<NotebookId | null>(null);
@@ -53,7 +54,7 @@ export default function Dashboard() {
   const activePage =
     pageList.find((p) => p._id === activePageId) ?? pageList[0] ?? null;
 
-  // ── Sidebar actions ─────────────────────────────────────────────────
+  // ── Notes actions ───────────────────────────────────────────────────
   const handleNewNotebook = async () => {
     const title = window.prompt("Notebook name", "My notebook");
     if (title === null) return;
@@ -74,24 +75,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleNewPage = async (targetNotebookId?: NotebookId) => {
-    const nbId = targetNotebookId ?? notebookId;
-    if (!nbId) {
-      toast.error("Create a notebook first.");
-      return;
-    }
-    try {
-      const id = await addPage({ notebookId: nbId });
-      setActiveNotebookId(nbId);
-      setActivePageId(id);
-      setSection("notes");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Couldn't create page.",
-      );
-    }
-  };
-
   const handleRenameNotebook = async (nb: { _id: NotebookId; title: string }) => {
     const title = window.prompt("Rename notebook", nb.title);
     if (title === null) return;
@@ -102,20 +85,6 @@ export default function Dashboard() {
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Couldn't rename notebook.",
-      );
-    }
-  };
-
-  const handleRenamePage = async (page: { _id: PageId; title: string }) => {
-    const title = window.prompt("Rename page", page.title);
-    if (title === null) return;
-    const clean = title.trim();
-    if (!clean) return;
-    try {
-      await updatePageRemote({ id: page._id, title: clean });
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Couldn't rename page.",
       );
     }
   };
@@ -134,10 +103,41 @@ export default function Dashboard() {
     }
   };
 
-  const handleDeletePage = async (page: { _id: PageId; title: string }) => {
-    if (!window.confirm(`Delete “${page.title}”?`)) {
+  const handleNewPage = async (parentId?: PageId) => {
+    if (!notebookId) {
+      toast.error("Create a notebook first.");
       return;
     }
+    try {
+      const id = await addPage({
+        notebookId,
+        parentId: parentId ?? undefined,
+      });
+      setActivePageId(id);
+      setSection("notes");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't create page.",
+      );
+    }
+  };
+
+  const handleRenamePage = async (page: { _id: PageId; title: string }) => {
+    const title = window.prompt("Rename page", page.title);
+    if (title === null) return;
+    const clean = title.trim();
+    if (!clean) return;
+    try {
+      await updatePageRemote({ id: page._id, title: clean });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't rename page.",
+      );
+    }
+  };
+
+  const handleDeletePage = async (page: { _id: PageId; title: string }) => {
+    if (!window.confirm(`Delete “${page.title}” and its sub-pages?`)) return;
     try {
       await removePage({ id: page._id });
       if (activePageId === page._id) setActivePageId(null);
@@ -161,6 +161,11 @@ export default function Dashboard() {
     setSection("notes");
   };
 
+  /** Flagged letters → task in the default list, linked back to the page. */
+  const handleFlagTask = async (text: string, pageId: PageId) => {
+    await addTask({ text, sourcePageId: pageId });
+  };
+
   // ── Shell chrome ────────────────────────────────────────────────────
   const firstName = user?.name?.trim().split(" ")[0] ?? "";
 
@@ -174,8 +179,6 @@ export default function Dashboard() {
     pagesByNotebook[notebookId] = pageList;
   }
 
-  const notesLoading = notebooks === undefined;
-
   const NAV_ITEMS: {
     id: Section;
     label: string;
@@ -186,7 +189,7 @@ export default function Dashboard() {
       id: "tasks",
       label: "Tasks",
       icon: CheckSquare,
-      description: "Your to-do list",
+      description: "Your to-do lists",
     },
     {
       id: "notes",
@@ -245,13 +248,13 @@ export default function Dashboard() {
           <NotesSidebar
             notebooks={nbList}
             pagesByNotebook={pagesByNotebook}
-            loading={notesLoading}
+            loading={notebooks === undefined}
             activeNotebookId={notebookId}
             activePageId={activePage?._id ?? null}
             onSelectNotebook={handleSelectNotebook}
             onSelectPage={handleSelectPage}
             onNewNotebook={handleNewNotebook}
-            onNewPage={handleNewPage}
+            onNewPage={() => handleNewPage()}
             onRenameNotebook={handleRenameNotebook}
             onRenamePage={handleRenamePage}
             onDeleteNotebook={handleDeleteNotebook}
@@ -343,8 +346,12 @@ export default function Dashboard() {
           ) : (
             <NotesPanel
               activePage={activePage}
+              pages={pageList}
               pagesLoading={pages === undefined}
               onNewPage={() => handleNewPage()}
+              onNewSubPage={(parentId) => handleNewPage(parentId)}
+              onSelectPage={(pageId) => setActivePageId(pageId)}
+              onFlagTask={handleFlagTask}
             />
           )}
         </main>
