@@ -15,10 +15,14 @@ export const noteFontValidator = v.union(
 export const noteColorValidator = v.union(
   v.literal("default"),
   v.literal("indigo"),
+  v.literal("violet"),
+  v.literal("sky"),
+  v.literal("teal"),
   v.literal("emerald"),
   v.literal("amber"),
+  v.literal("orange"),
   v.literal("rose"),
-  v.literal("sky"),
+  v.literal("pink"),
 );
 
 // page formatting: ink (text) color

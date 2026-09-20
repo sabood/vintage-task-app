@@ -67,6 +67,18 @@
 @utility note-sky {
   --note-accent: oklch(0.628 0.257 209.838);
 }
+@utility note-violet {
+  --note-accent: oklch(0.606 0.25 292.717);
+}
+@utility note-teal {
+  --note-accent: oklch(0.704 0.14 182.503);
+}
+@utility note-orange {
+  --note-accent: oklch(0.646 0.222 41.116);
+}
+@utility note-pink {
+  --note-accent: oklch(0.656 0.241 354.308);
+}
 @utility note-default {
   --note-accent: var(--muted-foreground);
 }

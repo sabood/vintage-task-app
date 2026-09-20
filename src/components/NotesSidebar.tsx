@@ -16,11 +16,15 @@ type PageId = Id<"notePages">;
 
 const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
   default: "bg-muted-foreground/60",
-  indigo: "bg-primary",
+  indigo: "bg-indigo-500",
+  violet: "bg-violet-500",
+  sky: "bg-sky-500",
+  teal: "bg-teal-500",
   emerald: "bg-emerald-500",
   amber: "bg-amber-500",
+  orange: "bg-orange-500",
   rose: "bg-rose-500",
-  sky: "bg-sky-500",
+  pink: "bg-pink-500",
 };
 
 /**

@@ -1,6 +1,6 @@
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import type { NoteColor, NoteFont } from "@/convex/schema";
+import type { NoteColor } from "@/convex/schema";
 import { Button } from "@/components/ui/button";
 import EditorRibbon from "@/components/EditorRibbon";
 import {
@@ -19,10 +19,7 @@ import {
   parseStrokes,
 } from "@/components/DrawingCanvas";
 import {
-  Flag,
-  ListOrdered,
   Loader2,
-  Pencil,
   PencilLine,
   Plus,
   StickyNote,
@@ -34,31 +31,32 @@ import { cn } from "@/lib/utils";
 
 type PageId = Id<"notePages">;
 
-const ACCENTS: { value: NoteColor; label: string; dot: string }[] = [
-  { value: "default", label: "Plain", dot: "bg-muted-foreground/60" },
-  { value: "indigo", label: "Indigo", dot: "bg-primary" },
-  { value: "emerald", label: "Emerald", dot: "bg-emerald-500" },
-  { value: "amber", label: "Amber", dot: "bg-amber-500" },
-  { value: "rose", label: "Rose", dot: "bg-rose-500" },
-  { value: "sky", label: "Sky", dot: "bg-sky-500" },
-];
+// (accent palette lives in EditorRibbon now)
 
 const ACCENT_CLASS: Record<NoteColor, string> = {
   default: "note-default",
   indigo: "note-indigo",
+  violet: "note-violet",
+  sky: "note-sky",
+  teal: "note-teal",
   emerald: "note-emerald",
   amber: "note-amber",
+  orange: "note-orange",
   rose: "note-rose",
-  sky: "note-sky",
+  pink: "note-pink",
 };
 
 const ACCENT_DOT_CLASS: Record<NoteColor, string> = {
   default: "bg-muted-foreground/60",
-  indigo: "bg-primary",
+  indigo: "bg-indigo-500",
+  violet: "bg-violet-500",
+  sky: "bg-sky-500",
+  teal: "bg-teal-500",
   emerald: "bg-emerald-500",
   amber: "bg-amber-500",
+  orange: "bg-orange-500",
   rose: "bg-rose-500",
-  sky: "bg-sky-500",
+  pink: "bg-pink-500",
 };
 
 /* ──────────────────────────────────────────────────────────────────────── */
@@ -190,8 +188,8 @@ function PageTabs({
       </div>
 
       {activePage && (
-        <div className="ml-5 flex items-stretch gap-1 overflow-x-auto rounded-lg border border-border/70 bg-muted/20 p-1">
-          <span className="flex shrink-0 items-center px-2 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+        <div className="ml-12 flex items-stretch gap-1 overflow-x-auto rounded-lg border border-border/60 bg-muted/20 p-0.5">
+          <span className="flex shrink-0 items-center px-2 text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
             Sub-pages
           </span>
           {subPages.map((page) => {
@@ -202,14 +200,14 @@ function PageTabs({
                 type="button"
                 onClick={() => onSelect(page._id)}
                 className={cn(
-                  "flex max-w-44 shrink-0 items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors",
+                  "flex max-w-40 shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors",
                   active
-                    ? "border-primary/40 bg-card text-foreground shadow-sm"
-                    : "border-transparent bg-card/50 text-muted-foreground hover:bg-card hover:text-foreground",
+                    ? "border-primary/30 bg-card text-foreground shadow-sm"
+                    : "border-transparent bg-transparent hover:bg-card/70 hover:text-foreground",
                 )}
               >
                 <span
-                  className={`size-2 shrink-0 rounded-full ${ACCENT_DOT_CLASS[page.color ?? "default"]}`}
+                  className={`size-1.5 shrink-0 rounded-full ${ACCENT_DOT_CLASS[page.color ?? "default"]}`}
                   aria-hidden
                 />
                 <span className="truncate">{page.title}</span>
@@ -219,9 +217,9 @@ function PageTabs({
           <button
             type="button"
             onClick={() => onAddSubPage(activePage._id)}
-            className="flex shrink-0 items-center gap-1 rounded-md border border-dashed px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            className="flex shrink-0 items-center gap-0.5 rounded-md px-2 py-0.5 text-xs text-muted-foreground/70 transition-colors hover:text-foreground"
           >
-            <Plus className="size-3.5" />
+            <Plus className="size-3" />
             Sub-page
           </button>
         </div>
@@ -239,12 +237,14 @@ function PageCanvas({
   pages,
   onSelectPage,
   onNewPage,
+  onNewSubPage,
   onFlagTask,
 }: {
   page: Doc<"notePages">;
   pages: Doc<"notePages">[];
   onSelectPage: (id: PageId) => void;
   onNewPage: () => void;
+  onNewSubPage: (parentId: PageId) => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
 }) {
   const updatePage = useMutation(api.notebooks.updatePage);
@@ -361,6 +361,7 @@ function PageCanvas({
   return (
     <div className="flex flex-1 flex-col gap-3">
       {/* Word-style ribbon — OUTSIDE and ABOVE the paper, sticky */}
+      {/* (page + sub-page tabs sit right below it) */}
       <EditorRibbon
         state={formatState}
         blockTag={blockTag}
@@ -370,6 +371,29 @@ function PageCanvas({
           if (editorRef.current) handleBodyChange(editorRef.current.innerHTML);
         }}
         savedLabel={savedTick > 0 ? "Saved ✓" : "Autosaves as you type"}
+        onFlag={handleFlagSelection}
+        numbered={numbered}
+        onToggleNumbered={() => {
+          const next = !numbered;
+          setNumbered(next);
+          scheduleSave({ numbered: next });
+        }}
+        accent={accent}
+        onAccent={(c) => {
+          setAccent(c);
+          scheduleSave({ color: c });
+        }}
+        drawMode={drawMode}
+        onToggleDraw={() => setDrawMode(!drawMode)}
+      />
+
+      {/* page + sub-page tabs BELOW the modifier ribbon */}
+      <PageTabs
+        pages={pages}
+        activePage={page}
+        onSelect={onSelectPage}
+        onAddTopLevel={onNewPage}
+        onAddSubPage={onNewSubPage}
       />
 
       {/* paper with right-edge index tabs */}
@@ -480,78 +504,11 @@ function PageCanvas({
           </div>
         </div>
 
-        {/* page footer: flag, accent, numbering, draw toggle */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 px-4 py-2.5 sm:px-10">
-          <button
-            type="button"
-            aria-label="Flag selection as task"
-            title="Flag selection: creates a task from the selected letters"
-            className="flex h-7 items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={handleFlagSelection}
-          >
-            <Flag className="size-3.5" />
-            Flag
-          </button>
-
-          <button
-            type="button"
-            aria-pressed={numbered}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
-              numbered
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              const next = !numbered;
-              setNumbered(next);
-              scheduleSave({ numbered: next });
-            }}
-          >
-            <ListOrdered className="size-3.5" />
-            Numbering
-          </button>
-
-          <div className="flex items-center gap-1">
-            <span className="mr-0.5 text-xs text-muted-foreground">Accent</span>
-            {ACCENTS.map((c) => (
-              <button
-                key={c.value}
-                type="button"
-                aria-label={`${c.label} accent`}
-                aria-pressed={accent === c.value}
-                className={cn(
-                  "size-4 rounded-[4px] ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110",
-                  c.dot,
-                  accent === c.value ? "ring-primary/60" : "ring-transparent",
-                )}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setAccent(c.value);
-                  scheduleSave({ color: c.value });
-                }}
-              />
-            ))}
-          </div>
-
-          <span className="ml-auto" />
-          <button
-            type="button"
-            aria-pressed={drawMode}
-            title="Toggle draw mode"
-            className={cn(
-              "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
-              drawMode
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => setDrawMode(!drawMode)}
-          >
-            <Pencil className="size-3.5" />
-            {drawMode ? "Done drawing" : "Draw"}
-          </button>
+        {/* minimal footer: autosave status only (controls live in the ribbon) */}
+        <div className="flex items-center border-t border-border/60 px-4 py-2 sm:px-10">
+          <span className="ml-auto text-[11px] text-muted-foreground">
+            {savedTick > 0 ? "Saved ✓" : "Autosaves as you type"}
+          </span>
         </div>
       </div>
     </div>
@@ -590,17 +547,6 @@ export default function NotesPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* page + sub-page tabs sit ABOVE the ribbon */}
-      {activePage && (
-        <PageTabs
-          pages={pages}
-          activePage={activePage}
-          onSelect={onSelectPage}
-          onAddTopLevel={onNewPage}
-          onAddSubPage={onNewSubPage}
-        />
-      )}
-
       {activePage ? (
         <PageCanvas
           key={activePage._id}
@@ -608,6 +554,7 @@ export default function NotesPanel({
           pages={pages}
           onSelectPage={onSelectPage}
           onNewPage={onNewPage}
+          onNewSubPage={onNewSubPage}
           onFlagTask={onFlagTask}
         />
       ) : (

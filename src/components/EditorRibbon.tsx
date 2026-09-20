@@ -7,6 +7,7 @@ import {
   formatSelection,
   INK_COMMAND_COLORS,
 } from "@/components/RichTextEditor";
+import type { NoteColor } from "@/convex/schema";
 import { cn } from "@/lib/utils";
 import {
   AlignCenter,
@@ -28,6 +29,8 @@ import {
   Superscript,
   Underline,
   Undo2,
+  Flag,
+  PencilLine,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -56,6 +59,19 @@ const HIGHLIGHT_SWATCHES: { value: string; dot: string }[] = [
   { value: "#bfdbfe", dot: "bg-blue-300" },
   { value: "#fbcfe8", dot: "bg-pink-300" },
   { value: "#e9d5ff", dot: "bg-purple-300" },
+];
+
+const ACCENT_SWATCHES: { value: NoteColor; label: string; dot: string }[] = [
+  { value: "default", label: "Plain", dot: "bg-muted-foreground/60" },
+  { value: "indigo", label: "Indigo", dot: "bg-indigo-500" },
+  { value: "violet", label: "Violet", dot: "bg-violet-500" },
+  { value: "sky", label: "Sky", dot: "bg-sky-500" },
+  { value: "teal", label: "Teal", dot: "bg-teal-500" },
+  { value: "emerald", label: "Emerald", dot: "bg-emerald-500" },
+  { value: "amber", label: "Amber", dot: "bg-amber-500" },
+  { value: "orange", label: "Orange", dot: "bg-orange-500" },
+  { value: "rose", label: "Rose", dot: "bg-rose-500" },
+  { value: "pink", label: "Pink", dot: "bg-pink-500" },
 ];
 
 function RibbonButton({
@@ -104,6 +120,13 @@ export default function EditorRibbon({
   onFormat,
   onPersist,
   savedLabel,
+  onFlag,
+  numbered,
+  onToggleNumbered,
+  accent,
+  onAccent,
+  drawMode,
+  onToggleDraw,
 }: {
   state: FormatState;
   blockTag: string;
@@ -111,6 +134,13 @@ export default function EditorRibbon({
   onFormat: (cmd: FormatCmd, arg?: string) => void;
   onPersist: () => void;
   savedLabel: string;
+  onFlag: () => void;
+  numbered: boolean;
+  onToggleNumbered: () => void;
+  accent: NoteColor;
+  onAccent: (c: NoteColor) => void;
+  drawMode: boolean;
+  onToggleDraw: () => void;
 }) {
   const [family, setFamily] = useState(FONT_FAMILIES[0].label);
   const [size, setSize] = useState(16);
@@ -370,6 +400,76 @@ export default function EditorRibbon({
         <RibbonButton label="Redo" onClick={() => onFormat("redo")}>
           <Redo2 className="size-4" />
         </RibbonButton>
+
+        <RibbonDivider />
+
+        {/* flag selection → task */}
+        <button
+          type="button"
+          aria-label="Flag selection as task"
+          title="Flag selection: creates a task from the selected letters"
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onFlag}
+        >
+          <Flag className="size-3.5" />
+          Flag
+        </button>
+
+        {/* line numbering (page-level) */}
+        <button
+          type="button"
+          aria-pressed={numbered}
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors",
+            numbered
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onToggleNumbered}
+        >
+          <ListOrdered className="size-3.5" />
+          Numbering
+        </button>
+
+        {/* notebook accent (page-level) */}
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="text-xs text-muted-foreground">Accent</span>
+          {ACCENT_SWATCHES.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              aria-label={`${c.label} accent`}
+              title={`${c.label} accent`}
+              aria-pressed={accent === c.value}
+              className={cn(
+                "size-4 shrink-0 rounded-[4px] ring-2 ring-offset-2 ring-offset-card transition-transform hover:scale-110",
+                c.dot,
+                accent === c.value ? "ring-primary/60" : "ring-transparent",
+              )}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onAccent(c.value)}
+            />
+          ))}
+        </div>
+
+        {/* draw mode toggle */}
+        <button
+          type="button"
+          aria-pressed={drawMode}
+          title="Toggle draw mode"
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors",
+            drawMode
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+          onClick={onToggleDraw}
+        >
+          <PencilLine className="size-3.5" />
+          Draw
+        </button>
       </div>
     </div>
   );
