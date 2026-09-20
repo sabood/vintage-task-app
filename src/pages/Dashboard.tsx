@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
@@ -201,6 +202,15 @@ export default function Dashboard() {
                     >
                       {task.text}
                     </span>
+                    {task.isCompleted && (
+                      <Badge
+                        variant="secondary"
+                        className="gap-1 rounded-full bg-emerald-500/10 px-2 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                      >
+                        <Check className="size-3" strokeWidth={3} />
+                        Completed
+                      </Badge>
+                    )}
                   </motion.li>
                 ))}
               </AnimatePresence>
