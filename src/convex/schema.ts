@@ -74,6 +74,7 @@ const schema = defineSchema(
     notebooks: defineTable({
       ownerId: v.id("users"),
       title: v.string(),
+      color: v.optional(noteColorValidator), // accent color for the notebook
     }).index("by_owner", ["ownerId"]),
 
     // pages inside a notebook; rendered like sheets of paper

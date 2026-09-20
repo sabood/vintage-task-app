@@ -1,34 +1,21 @@
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
+import NotesSidebar from "@/components/NotesSidebar";
+import NotesPanel from "@/components/NotesPanel";
+import TasksPanel from "@/components/TasksPanel";
 import { format } from "date-fns";
 import { Check, CheckSquare, LogOut, NotebookPen } from "lucide-react";
 import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { useNavigate } from "react-router";
-import TasksPanel from "@/components/TasksPanel";
-import NotesPanel from "@/components/NotesPanel";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type Section = "tasks" | "notes";
-
-const NAV_ITEMS: {
-  id: Section;
-  label: string;
-  icon: typeof CheckSquare;
-  description: string;
-}[] = [
-  {
-    id: "tasks",
-    label: "Tasks",
-    icon: CheckSquare,
-    description: "Your to-do list",
-  },
-  {
-    id: "notes",
-    label: "Notes",
-    icon: NotebookPen,
-    description: "Notebooks & pages",
-  },
-];
+type NotebookId = Id<"notebooks">;
+type PageId = Id<"notePages">;
 
 function greetingForHour(hour: number) {
   if (hour < 12) return "Good morning";
@@ -41,6 +28,140 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [section, setSection] = useState<Section>("tasks");
 
+  // ── Notes tree state (rendered inside the side menu) ───────────────
+  const notebooks = useQuery(api.notebooks.listNotebooks);
+  const addNotebook = useMutation(api.notebooks.addNotebook);
+  const removeNotebook = useMutation(api.notebooks.removeNotebook);
+  const addPage = useMutation(api.notebooks.addPage);
+  const renameNotebook = useMutation(api.notebooks.renameNotebook);
+  const updatePageRemote = useMutation(api.notebooks.updatePage);
+  const removePage = useMutation(api.notebooks.removePage);
+
+  const nbList = notebooks ?? [];
+  const [activeNotebookId, setActiveNotebookId] = useState<NotebookId | null>(null);
+  const [activePageId, setActivePageId] = useState<PageId | null>(null);
+
+  const activeNotebook =
+    nbList.find((nb) => nb._id === activeNotebookId) ?? nbList[0] ?? null;
+  const notebookId = activeNotebook?._id ?? null;
+
+  const pages = useQuery(
+    api.notebooks.listPages,
+    notebookId ? { notebookId } : "skip",
+  );
+  const pageList = pages ?? [];
+  const activePage =
+    pageList.find((p) => p._id === activePageId) ?? pageList[0] ?? null;
+
+  // ── Sidebar actions ─────────────────────────────────────────────────
+  const handleNewNotebook = async () => {
+    const title = window.prompt("Notebook name", "My notebook");
+    if (title === null) return;
+    const clean = title.trim();
+    if (!clean) {
+      toast.error("Give the notebook a name.");
+      return;
+    }
+    try {
+      const id = await addNotebook({ title: clean });
+      setActiveNotebookId(id);
+      setActivePageId(null);
+      setSection("notes");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't create notebook.",
+      );
+    }
+  };
+
+  const handleNewPage = async (targetNotebookId?: NotebookId) => {
+    const nbId = targetNotebookId ?? notebookId;
+    if (!nbId) {
+      toast.error("Create a notebook first.");
+      return;
+    }
+    try {
+      const id = await addPage({ notebookId: nbId });
+      setActiveNotebookId(nbId);
+      setActivePageId(id);
+      setSection("notes");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't create page.",
+      );
+    }
+  };
+
+  const handleRenameNotebook = async (nb: { _id: NotebookId; title: string }) => {
+    const title = window.prompt("Rename notebook", nb.title);
+    if (title === null) return;
+    const clean = title.trim();
+    if (!clean) return;
+    try {
+      await renameNotebook({ id: nb._id, title: clean });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't rename notebook.",
+      );
+    }
+  };
+
+  const handleRenamePage = async (page: { _id: PageId; title: string }) => {
+    const title = window.prompt("Rename page", page.title);
+    if (title === null) return;
+    const clean = title.trim();
+    if (!clean) return;
+    try {
+      await updatePageRemote({ id: page._id, title: clean });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't rename page.",
+      );
+    }
+  };
+
+  const handleDeleteNotebook = async (nb: { _id: NotebookId; title: string }) => {
+    if (!window.confirm(`Delete “${nb.title}” and all of its pages?`)) return;
+    try {
+      await removeNotebook({ id: nb._id });
+      if (activeNotebookId === nb._id) setActiveNotebookId(null);
+      setActivePageId(null);
+      toast.success("Notebook deleted.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't delete notebook.",
+      );
+    }
+  };
+
+  const handleDeletePage = async (page: { _id: PageId; title: string }) => {
+    if (!window.confirm(`Delete “${page.title}”?`)) {
+      return;
+    }
+    try {
+      await removePage({ id: page._id });
+      if (activePageId === page._id) setActivePageId(null);
+      toast.success("Page deleted.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't delete page.",
+      );
+    }
+  };
+
+  const handleSelectNotebook = (id: NotebookId) => {
+    setActiveNotebookId(id);
+    setActivePageId(null);
+    setSection("notes");
+  };
+
+  const handleSelectPage = (nbId: NotebookId, pageId: PageId) => {
+    setActiveNotebookId(nbId);
+    setActivePageId(pageId);
+    setSection("notes");
+  };
+
+  // ── Shell chrome ────────────────────────────────────────────────────
   const firstName = user?.name?.trim().split(" ")[0] ?? "";
 
   const handleSignOut = async () => {
@@ -48,10 +169,37 @@ export default function Dashboard() {
     navigate("/");
   };
 
+  const pagesByNotebook: Record<NotebookId, typeof pageList | undefined> = {};
+  if (notebookId) {
+    pagesByNotebook[notebookId] = pageList;
+  }
+
+  const notesLoading = notebooks === undefined;
+
+  const NAV_ITEMS: {
+    id: Section;
+    label: string;
+    icon: typeof CheckSquare;
+    description: string;
+  }[] = [
+    {
+      id: "tasks",
+      label: "Tasks",
+      icon: CheckSquare,
+      description: "Your to-do list",
+    },
+    {
+      id: "notes",
+      label: "Notes",
+      icon: NotebookPen,
+      description: "Notebooks & pages",
+    },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       {/* ── Side menu ───────────────────────────────────────────────── */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border/60 bg-card/50 md:flex">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border/60 bg-card/50 md:flex">
         {/* brand */}
         <div className="flex items-center gap-2.5 px-5 py-5">
           <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
@@ -62,7 +210,7 @@ export default function Dashboard() {
           </span>
         </div>
 
-        {/* nav */}
+        {/* primary nav */}
         <nav className="flex flex-col gap-1 px-3">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -80,7 +228,7 @@ export default function Dashboard() {
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
-                <Icon className="size-4.5 shrink-0" />
+                <Icon className="size-4 shrink-0" />
                 <span className="flex-1">
                   <span className="block text-sm font-medium">{item.label}</span>
                   <span className="block text-xs opacity-70">
@@ -92,7 +240,26 @@ export default function Dashboard() {
           })}
         </nav>
 
-        {/* user + sign out at the bottom */}
+        {/* notebooks submenu tree */}
+        <div className="mt-4 border-t border-border/60 px-3 pt-3 pb-4">
+          <NotesSidebar
+            notebooks={nbList}
+            pagesByNotebook={pagesByNotebook}
+            loading={notesLoading}
+            activeNotebookId={notebookId}
+            activePageId={activePage?._id ?? null}
+            onSelectNotebook={handleSelectNotebook}
+            onSelectPage={handleSelectPage}
+            onNewNotebook={handleNewNotebook}
+            onNewPage={handleNewPage}
+            onRenameNotebook={handleRenameNotebook}
+            onRenamePage={handleRenamePage}
+            onDeleteNotebook={handleDeleteNotebook}
+            onDeletePage={handleDeletePage}
+          />
+        </div>
+
+        {/* user + sign out */}
         <div className="mt-auto border-t border-border/60 p-4">
           {firstName && (
             <p className="mb-3 truncate px-1 text-sm font-medium">{firstName}</p>
@@ -111,10 +278,9 @@ export default function Dashboard() {
 
       {/* ── Main column ─────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* top bar (mobile nav lives here too) */}
+        {/* top bar */}
         <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
           <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-8">
-            {/* mobile brand + nav */}
             <div className="flex items-center gap-2 md:hidden">
               <span className="grid size-7 place-items-center rounded-lg bg-primary text-primary-foreground">
                 <Check className="size-3.5" strokeWidth={3} />
@@ -160,7 +326,6 @@ export default function Dashboard() {
 
         {/* wide content area */}
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-16 pt-8 sm:px-8">
-          {/* greeting (tasks view keeps its header; notes fills the width) */}
           {section === "tasks" && (
             <div className="mb-6">
               <h1 className="font-display text-3xl font-bold tracking-tight">
@@ -173,7 +338,15 @@ export default function Dashboard() {
             </div>
           )}
 
-          {section === "tasks" ? <TasksPanel /> : <NotesPanel />}
+          {section === "tasks" ? (
+            <TasksPanel />
+          ) : (
+            <NotesPanel
+              activePage={activePage}
+              pagesLoading={pages === undefined}
+              onNewPage={() => handleNewPage()}
+            />
+          )}
         </main>
 
         <p className="pb-8 text-center text-xs text-muted-foreground">
