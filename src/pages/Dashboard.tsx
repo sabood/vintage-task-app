@@ -3,6 +3,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import NotesSidebar from "@/components/NotesSidebar";
+import TasksSidebar from "@/components/TasksSidebar";
 import NotesPanel from "@/components/NotesPanel";
 import TasksPanel from "@/components/TasksPanel";
 import { format } from "date-fns";
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 type Section = "tasks" | "notes";
 type NotebookId = Id<"notebooks">;
 type PageId = Id<"notePages">;
+type ListId = Id<"taskLists">;
 
 function greetingForHour(hour: number) {
   if (hour < 12) return "Good morning";
@@ -37,6 +39,13 @@ export default function Dashboard() {
   const updatePageRemote = useMutation(api.notebooks.updatePage);
   const removePage = useMutation(api.notebooks.removePage);
   const addTask = useMutation(api.tasks.add);
+
+  // ── Task lists (rendered inside the side menu on Tasks) ────────────
+  const taskLists = useQuery(api.tasks.listLists);
+  const addList = useMutation(api.tasks.addList);
+  const renameList = useMutation(api.tasks.renameList);
+  const removeList = useMutation(api.tasks.removeList);
+  const [activeListId, setActiveListId] = useState<ListId | null>(null);
 
   const nbList = notebooks ?? [];
   const [activeNotebookId, setActiveNotebookId] = useState<NotebookId | null>(null);
@@ -169,6 +178,47 @@ export default function Dashboard() {
     await addTask({ text, sourcePageId: pageId });
   };
 
+  // ── Task list actions ───────────────────────────────────────────────
+  const handleNewList = async () => {
+    const name = window.prompt("List name", "My list");
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) {
+      toast.error("Give the list a name.");
+      return;
+    }
+    try {
+      const id = await addList({ name: clean });
+      setActiveListId(id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create list.");
+    }
+  };
+
+  const handleRenameList = async (list: { _id: ListId; name: string }) => {
+    const name = window.prompt("Rename list", list.name);
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) return;
+    try {
+      await renameList({ id: list._id, name: clean });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't rename list.");
+    }
+  };
+
+  const handleDeleteList = async (list: { _id: ListId; name: string }) => {
+    if (!window.confirm(`Delete “${list.name}”? Its tasks move to the default list.`))
+      return;
+    try {
+      await removeList({ id: list._id });
+      if (activeListId === list._id) setActiveListId(null);
+      toast.success("List deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete list.");
+    }
+  };
+
   // ── Shell chrome ────────────────────────────────────────────────────
   const firstName = user?.name?.trim().split(" ")[0] ?? "";
 
@@ -241,9 +291,20 @@ export default function Dashboard() {
           })}
         </nav>
 
-        {/* notebooks explorer tree */}
+        {/* section-aware explorer tree */}
         <div className="mt-4 border-t border-border/60 px-3 pt-3 pb-4">
-          <NotesSidebar
+          {section === "tasks" ? (
+            <TasksSidebar
+              lists={taskLists ?? []}
+              loading={taskLists === undefined}
+              activeListId={activeListId}
+              onSelectList={setActiveListId}
+              onNewList={handleNewList}
+              onRenameList={handleRenameList}
+              onDeleteList={handleDeleteList}
+            />
+          ) : (
+            <NotesSidebar
             notebooks={nbList}
             allPages={allPages}
             loading={notebooks === undefined || allPages === undefined}
@@ -259,6 +320,7 @@ export default function Dashboard() {
             onDeleteNotebook={handleDeleteNotebook}
             onDeletePage={handleDeletePage}
           />
+          )}
         </div>
 
         {/* user + sign out */}
@@ -305,9 +367,29 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-            <span className="hidden text-sm text-muted-foreground md:block">
-              {format(new Date(), "EEEE, MMMM d")}
-            </span>
+            <div className="hidden items-center gap-1.5 md:flex">
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const active = section === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSection(item.id)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                      active
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex items-center gap-3">
               {firstName && (
                 <span className="hidden text-sm text-muted-foreground sm:block">
@@ -341,7 +423,10 @@ export default function Dashboard() {
           )}
 
           {section === "tasks" ? (
-            <TasksPanel />
+            <TasksPanel
+              activeListId={activeListId}
+              onSelectList={setActiveListId}
+            />
           ) : (
             <NotesPanel
               activePage={activePage}

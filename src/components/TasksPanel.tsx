@@ -5,14 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Flag,
-  Inbox,
-  ListX,
-  Loader2,
-  Pencil,
-  Plus,
-} from "lucide-react";
+import { Flag, Inbox, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
@@ -20,7 +13,13 @@ import { cn } from "@/lib/utils";
 
 type ListId = Id<"taskLists">;
 
-export default function TasksPanel() {
+export default function TasksPanel({
+  activeListId,
+  onSelectList,
+}: {
+  activeListId: ListId | null;
+  onSelectList: (id: ListId | null) => void;
+}) {
   const allTasks = useQuery(api.tasks.list);
   const lists = useQuery(api.tasks.listLists);
   const addTask = useMutation(api.tasks.add);
@@ -29,7 +28,6 @@ export default function TasksPanel() {
   const renameList = useMutation(api.tasks.renameList);
   const removeList = useMutation(api.tasks.removeList);
 
-  const [activeListId, setActiveListId] = useState<ListId | null>(null);
   const [draft, setDraft] = useState("");
   const [isAdding, setIsAdding] = useState(false);
 
@@ -76,7 +74,7 @@ export default function TasksPanel() {
     }
     try {
       const id = await addList({ name: clean });
-      setActiveListId(id);
+      onSelectList(id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't create list.");
     }
@@ -99,7 +97,7 @@ export default function TasksPanel() {
       return;
     try {
       await removeList({ id: list._id });
-      if (activeListId === list._id) setActiveListId(null);
+      if (activeListId === list._id) onSelectList(null);
       toast.success("List deleted.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't delete list.");
@@ -108,69 +106,8 @@ export default function TasksPanel() {
 
   return (
     <div>
-      {/* ── List tabs ───────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setActiveListId(null)}
-          className={cn(
-            "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
-            activeListId === null
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          All tasks
-        </button>
-        {(lists ?? []).map((list) => (
-          <span key={list._id} className="group/l relative inline-flex">
-            <button
-              type="button"
-              onClick={() => setActiveListId(list._id)}
-              className={cn(
-                "rounded-full border px-3.5 py-1.5 pr-7 text-sm font-medium transition-colors",
-                activeListId === list._id
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-              )}
-            >
-              {list.name}
-            </button>
-            <span
-              className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-focus-within/l:opacity-100 group-hover/l:opacity-100"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                aria-label={`Rename list “${list.name}”`}
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => handleRenameList(list)}
-              >
-                <Pencil className="size-3" />
-              </button>
-              <button
-                type="button"
-                aria-label={`Delete list “${list.name}”`}
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => handleDeleteList(list)}
-              >
-                <ListX className="size-3" />
-              </button>
-            </span>
-          </span>
-        ))}
-        <button
-          type="button"
-          onClick={handleNewList}
-          className="flex items-center gap-1 rounded-full border border-dashed px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Plus className="size-3.5" />
-          New list
-        </button>
-      </div>
-
       {/* ── Stats ───────────────────────────────────────────────────── */}
-      <section className="mt-4 grid grid-cols-3 gap-3">
+      <section className="grid grid-cols-3 gap-3">
         {[
           { label: activeList ? activeList.name : "Tasks", value: tasks.length },
           { label: "Completed", value: doneCount },
