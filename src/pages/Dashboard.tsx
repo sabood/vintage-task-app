@@ -7,19 +7,23 @@ import TasksSidebar from "@/components/TasksSidebar";
 import type { ActiveTaskView } from "@/components/TasksSidebar";
 import NotesPanel from "@/components/NotesPanel";
 import TasksPanel from "@/components/TasksPanel";
+import CostingSidebar from "@/components/CostingSidebar";
+import CostingPanel from "@/components/CostingPanel";
 import { format } from "date-fns";
-import { Check, CheckSquare, LogOut, NotebookPen } from "lucide-react";
+import { Calculator, Check, CheckSquare, LogOut, NotebookPen } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type Section = "tasks" | "notes";
+type Section = "tasks" | "notes" | "costing";
 type NotebookId = Id<"notebooks">;
 type PageId = Id<"notePages">;
 type ListId = Id<"taskLists">;
 type FolderId = Id<"taskFolders">;
+type SheetId = Id<"costingSheets">;
+type MaterialId = Id<"rawMaterials">;
 
 function greetingForHour(hour: number) {
   if (hour < 12) return "Good morning";
@@ -301,6 +305,126 @@ export default function Dashboard() {
     }
   };
 
+  // ── Costing (raw materials + sheets) ─────────────────────────────
+  const materials = useQuery(api.costing.listMaterials);
+  const costSheets = useQuery(api.costing.listSheets);
+  const addMaterialM = useMutation(api.costing.addMaterial);
+  const updateMaterialM = useMutation(api.costing.updateMaterial);
+  const removeMaterialM = useMutation(api.costing.removeMaterial);
+  const addSheetM = useMutation(api.costing.addSheet);
+  const renameSheetM = useMutation(api.costing.renameSheet);
+  const removeSheetM = useMutation(api.costing.removeSheet);
+  const [activeSheetId, setActiveSheetId] = useState<SheetId | null>(null);
+
+  const handleAddMaterial = async () => {
+    const name = window.prompt("Material name", "Steel rod");
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) {
+      toast.error("Give the material a name.");
+      return;
+    }
+    const unit = window.prompt("Unit (kg, m, pcs, L, hr…)", "pcs");
+    if (unit === null) return;
+    const priceRaw = window.prompt(`Price per ${unit.trim() || "unit"}`, "0");
+    if (priceRaw === null) return;
+    const price = Number(priceRaw);
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Enter a valid price.");
+      return;
+    }
+    try {
+      await addMaterialM({ name: clean, unit, pricePerUnit: price });
+      toast.success(`“${clean}” added to raw materials.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't add the material.");
+    }
+  };
+
+  const handleRenameMaterial = async (material: { _id: MaterialId; name: string }) => {
+    const name = window.prompt("Rename material", material.name);
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) return;
+    try {
+      await updateMaterialM({ id: material._id, name: clean });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't rename the material.");
+    }
+  };
+
+  const handleEditMaterial = async (material: {
+    _id: MaterialId;
+    name: string;
+    unit: string;
+    pricePerUnit: number;
+  }) => {
+    const priceRaw = window.prompt(
+      `Price per ${material.unit} for “${material.name}”`,
+      String(material.pricePerUnit),
+    );
+    if (priceRaw === null) return;
+    const price = Number(priceRaw);
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Enter a valid price.");
+      return;
+    }
+    try {
+      await updateMaterialM({ id: material._id, pricePerUnit: price });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't update the price.");
+    }
+  };
+
+  const handleDeleteMaterial = async (material: { _id: MaterialId; name: string }) => {
+    if (!window.confirm(`Delete raw material “${material.name}”?`)) return;
+    try {
+      await removeMaterialM({ id: material._id });
+      toast.success("Material deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete the material.");
+    }
+  };
+
+  const handleNewSheet = async () => {
+    const name = window.prompt("Costing sheet name", "Job estimate");
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) {
+      toast.error("Give the sheet a name.");
+      return;
+    }
+    try {
+      const id = await addSheetM({ name: clean });
+      setActiveSheetId(id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create the sheet.");
+    }
+  };
+
+  const handleRenameSheet = async (sheet: { _id: SheetId; name: string }) => {
+    const name = window.prompt("Rename sheet", sheet.name);
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) return;
+    try {
+      await renameSheetM({ id: sheet._id, name: clean });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't rename the sheet.");
+    }
+  };
+
+  const handleDeleteSheet = async (sheet: { _id: SheetId; name: string }) => {
+    if (!window.confirm(`Delete costing sheet “${sheet.name}” and all its rows?`)) return;
+    try {
+      await removeSheetM({ id: sheet._id });
+      if (activeSheetId === sheet._id) setActiveSheetId(null);
+      toast.success("Sheet deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete the sheet.");
+    }
+  };
+
   // ── Shell chrome ────────────────────────────────────────────────────
   const firstName = user?.name?.trim().split(" ")[0] ?? "";
 
@@ -327,6 +451,12 @@ export default function Dashboard() {
       icon: NotebookPen,
       description: "Notebooks & pages",
     },
+    {
+      id: "costing",
+      label: "Costing sheet",
+      icon: Calculator,
+      description: "Job cost calculator",
+    },
   ];
 
   return (
@@ -345,7 +475,16 @@ export default function Dashboard() {
 
         {/* section-aware explorer tree */}
         <div className="mt-4 border-t border-border/60 px-3 pt-3 pb-4">
-          {section === "tasks" ? (
+          {section === "costing" ? (
+            <CostingSidebar
+              materials={materials ?? []}
+              loading={materials === undefined}
+              onAddMaterial={() => void handleAddMaterial()}
+              onRenameMaterial={(m) => void handleRenameMaterial(m)}
+              onEditMaterial={(m) => void handleEditMaterial(m)}
+              onDeleteMaterial={(m) => void handleDeleteMaterial(m)}
+            />
+          ) : section === "tasks" ? (
             <TasksSidebar
               lists={taskLists ?? []}
               folders={taskFolders ?? []}
@@ -483,7 +622,19 @@ export default function Dashboard() {
             </div>
           )}
 
-          {section === "tasks" ? (
+          {section === "costing" ? (
+            <CostingPanel
+              materials={materials ?? []}
+              sheets={costSheets ?? []}
+              loading={costSheets === undefined}
+              activeSheetId={activeSheetId}
+              onSelectSheet={setActiveSheetId}
+              onNewSheet={() => void handleNewSheet()}
+              onRenameSheet={(s) => void handleRenameSheet(s)}
+              onDeleteSheet={(s) => void handleDeleteSheet(s)}
+              onAddMaterial={() => void handleAddMaterial()}
+            />
+          ) : section === "tasks" ? (
             <TasksPanel
               activeView={activeTaskView}
               lists={taskLists ?? []}

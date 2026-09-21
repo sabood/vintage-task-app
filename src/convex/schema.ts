@@ -122,6 +122,35 @@ const schema = defineSchema(
       name: v.string(),
     }).index("by_owner", ["ownerId"]),
 
+    // raw materials used for job/task costing (price per unit)
+    rawMaterials: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
+      unit: v.string(), // e.g. kg, m, pcs, L, hr
+      pricePerUnit: v.number(),
+    }).index("by_owner", ["ownerId"]),
+
+    // a costing sheet for a job / project / task
+    costingSheets: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
+      currency: v.optional(v.string()), // display currency symbol
+      markupPct: v.optional(v.number()), // profit % applied on cost
+    }).index("by_owner", ["ownerId"]),
+
+    // one line inside a costing sheet
+    costingItems: defineTable({
+      ownerId: v.id("users"),
+      sheetId: v.id("costingSheets"),
+      materialId: v.optional(v.id("rawMaterials")), // set for raw-material lines
+      label: v.string(), // material name or custom line label
+      qty: v.number(),
+      unitPrice: v.number(), // copied from material but editable
+      unit: v.optional(v.string()),
+    })
+      .index("by_sheet", ["sheetId"])
+      .index("by_owner", ["ownerId"]),
+
     // notebooks: the top level of the notes workspace (OneNote-style)
     notebooks: defineTable({
       ownerId: v.id("users"),
