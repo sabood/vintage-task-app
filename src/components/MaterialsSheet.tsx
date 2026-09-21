@@ -2,7 +2,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, Loader2, Package, Plus, Trash2 } from "lucide-react";
+import { Download, Loader2, Package, Plus, Search as SearchIcon, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ export default function MaterialsSheet({
   const [price, setPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const categories = useMemo(
     () => Array.from(new Set(materials.map((m) => m.category).filter(Boolean) as string[])).sort(),
@@ -40,16 +41,18 @@ export default function MaterialsSheet({
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = q
-      ? materials.filter(
-          (m) =>
-            m.name.toLowerCase().includes(q) ||
-            (m.code ?? "").toLowerCase().includes(q) ||
-            (m.category ?? "").toLowerCase().includes(q),
-        )
-      : materials;
-    return [...list].sort((a, b) => a.name.localeCompare(b.name));
-  }, [materials, search]);
+    return materials
+      .filter((m) => {
+        if (categoryFilter !== "all" && (m.category ?? "") !== categoryFilter) return false;
+        if (!q) return true;
+        return (
+          m.name.toLowerCase().includes(q) ||
+          (m.code ?? "").toLowerCase().includes(q) ||
+          (m.category ?? "").toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [materials, search, categoryFilter]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,14 +180,28 @@ export default function MaterialsSheet({
             </span>
           </p>
           <div className="flex items-center gap-2">
-            {materials.length > 3 && (
+            <div className="relative">
+              <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="w-36 rounded-lg border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-primary/30"
+                placeholder="Search code, name…"
+                className="w-40 rounded-lg border bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-primary/30"
               />
-            )}
+            </div>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter by category"
+              className="rounded-lg border bg-background px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="all">All categories</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
             {rows.length > 0 && (
               <Button type="button" variant="outline" size="sm" className="h-7 rounded-lg text-xs" onClick={exportCsv}>
                 <Download className="size-3" />
