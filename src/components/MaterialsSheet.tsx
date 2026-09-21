@@ -135,6 +135,18 @@ export default function MaterialsSheet({
 
   return (
     <div>
+      {/* master-data manager — must stay OUTSIDE the form (nested forms are
+          invalid HTML: the browser strips inner forms, so the manager's Add
+          buttons would submit the outer add-material form instead) */}
+      {showManager && (
+        <div className="mb-3">
+          <MasterDataManager
+            units={units}
+            categories={allCategories}
+            onClose={() => setShowManager(false)}
+          />
+        </div>
+      )}
       {/* add material bar */}
       <form
         onSubmit={handleAdd}
@@ -154,15 +166,6 @@ export default function MaterialsSheet({
             Manage units & categories
           </button>
         </div>
-        {showManager && (
-          <div className="mb-3">
-            <MasterDataManager
-              units={units}
-              categories={allCategories}
-              onClose={() => setShowManager(false)}
-            />
-          </div>
-        )}
         <div className="flex flex-wrap gap-1.5">
           <Input
             value={code}

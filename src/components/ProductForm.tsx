@@ -191,6 +191,18 @@ export default function ProductForm({
 
   return (
     <div>
+      {/* master-data manager — must stay OUTSIDE the form (nested forms are
+          invalid HTML: the browser strips inner forms, so the manager's Add
+          buttons would submit the outer create-product form instead) */}
+      {showManager && (
+        <div className="mb-3">
+          <MasterDataManager
+            units={units}
+            categories={allCategories}
+            onClose={() => setShowManager(false)}
+          />
+        </div>
+      )}
       {/* add product bar (collapsible, like the materials add bar) */}
       {showForm ? (
         <form onSubmit={handleCreate} className="rounded-xl border bg-card p-3 shadow-sm">
@@ -217,15 +229,6 @@ export default function ProductForm({
               </button>
             </div>
           </div>
-          {showManager && (
-            <div className="mb-3">
-              <MasterDataManager
-                units={units}
-                categories={allCategories}
-                onClose={() => setShowManager(false)}
-              />
-            </div>
-          )}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <Input
               value={project}
