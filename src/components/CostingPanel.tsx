@@ -69,7 +69,7 @@ export default function CostingPanel({
   const updateFg = useMutation(api.costing.updateFinishedGood);
   const setFgImage = useMutation(api.costing.setFgImage);
   const clearFgImageM = useMutation(api.costing.clearFgImage);
-  const { confirm } = useAppDialogs();
+  const { confirm, promptMulti } = useAppDialogs();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -129,11 +129,10 @@ export default function CostingPanel({
   const [customQty, setCustomQty] = useState("1");
   const [customPrice, setCustomPrice] = useState("0");
 
-  // Draft state — cell edits stay local until "Save" is pressed.
+  // Draft state — edits stay local until "Save" is pressed.
   const [drafts, setDrafts] = useState<
     { id: Id<"costingItems">; label: string; qty: number; unitPrice: number }[]
   >([]);
-  const [draftMarkup, setDraftMarkup] = useState<number | null>(null);
   const [savingSheet, setSavingSheet] = useState(false);
 
   const activeFg =
@@ -164,18 +163,14 @@ export default function CostingPanel({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, activeFg?._id]);
-  useEffect(() => {
-    setDraftMarkup(null);
-  }, [activeFg?._id, markupPct]);
 
   const isDirty = useMemo(() => {
-    if (draftMarkup !== null && draftMarkup !== markupPct) return true;
     if (drafts.length !== rows.length) return rows.length > 0;
     return rows.some((r) => {
       const d = drafts.find((x) => x.id === r._id);
       return d ? d.label !== r.label || d.qty !== r.qty || d.unitPrice !== r.unitPrice : false;
     });
-  }, [drafts, rows, draftMarkup, markupPct]);
+  }, [drafts, rows]);
 
   const updateDraft = (id: Id<"costingItems">, patch: Partial<{ label: string; qty: number; unitPrice: number }>) =>
     setDrafts((ds) => ds.map((d) => (d.id === id ? { ...d, ...patch } : d)));
@@ -198,10 +193,6 @@ export default function CostingPanel({
           });
         }
       }
-      if (draftMarkup !== null && draftMarkup !== markupPct) {
-        await updateFg({ id: activeFg._id, markupPct: draftMarkup });
-      }
-      setDraftMarkup(null);
       toast.success("Sheet saved.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't save the sheet.");
@@ -222,7 +213,46 @@ export default function CostingPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDirty, drafts, draftMarkup]);
+  }, [isDirty, drafts]);
+
+  /** Per-row edit dialog (pencil icon). */
+  const handleEditRow = async (row: { _id: Id<"costingItems">; label: string; qty: number; unitPrice: number }) => {
+    if (!activeFg) return;
+    const result = await promptMulti({
+      title: `Edit line — ${row.label}`,
+      message: "Change the description, quantity, or unit price.",
+      columns: 2,
+      confirmLabel: "Apply",
+      fields: [
+        { key: "label", label: "Description", initial: row.label, required: true },
+        { key: "qty", label: "Quantity", initial: String(row.qty), type: "number", required: true },
+        {
+          key: "price",
+          label: "Unit price",
+          initial: String(row.unitPrice),
+          type: "number",
+          required: true,
+        },
+      ],
+    });
+    if (result === null) return;
+    const qty = Number(result.qty);
+    const price = Number(result.price);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error("Quantity must be greater than zero.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Price can't be negative.");
+      return;
+    }
+    try {
+      await updateItem({ id: row._id, label: result.label, qty, unitPrice: price });
+      toast.success("Line updated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't update the line.");
+    }
+  };
 
   const addMaterialRow = async () => {
     if (!activeFg || !addingMaterialId) return;
@@ -454,21 +484,6 @@ export default function CostingPanel({
             >
               Edit details
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className={cn("rounded-lg", isDirty && "animate-pulse")}
-              disabled={!isDirty || savingSheet}
-              onClick={() => void saveSheet()}
-              title="Save all sheet edits (Ctrl/Cmd+S)"
-            >
-              {savingSheet ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Save className="size-3.5" />
-              )}
-              {isDirty ? "Save changes" : "Saved"}
-            </Button>
           </div>
 
           {/* image lightbox */}
@@ -626,14 +641,7 @@ export default function CostingPanel({
                         <td className="px-3 py-1 text-xs text-muted-foreground tabular-nums">
                           {i + 1}
                         </td>
-                        <td className="px-1 py-1">
-                          <input
-                            value={drafts.find((d) => d.id === row._id)?.label ?? row.label}
-                            onChange={(e) => updateDraft(row._id, { label: e.target.value })}
-                            className={cellCls}
-                            aria-label="Description"
-                          />
-                        </td>
+                        <td className="px-3 py-2 font-medium">{row.label}</td>
                         <td className="px-1 py-1">
                           <input
                             type="number"
@@ -647,19 +655,11 @@ export default function CostingPanel({
                             aria-label="Quantity"
                           />
                         </td>
-                        <td className="px-3 py-1 text-xs text-muted-foreground">{row.unit ?? "—"}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{row.unit ?? "—"}</td>
                         <td className="px-1 py-1">
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={drafts.find((d) => d.id === row._id)?.unitPrice ?? row.unitPrice}
-                            onChange={(e) =>
-                              updateDraft(row._id, { unitPrice: Number(e.target.value) })
-                            }
-                            className={cn(cellCls, "text-right tabular-nums")}
-                            aria-label="Unit price"
-                          />
+                          <span className="block px-2 py-1.5 text-right tabular-nums">
+                            {row.unitPrice.toLocaleString()}
+                          </span>
                         </td>
                         <td className="px-3 py-1.5 text-right font-medium tabular-nums">
                           {money(
@@ -669,18 +669,30 @@ export default function CostingPanel({
                           )}
                         </td>
                         <td className="px-2 py-1 text-center">
-                          <button
-                            type="button"
-                            aria-label="Delete row"
-                            className="hidden text-muted-foreground hover:text-destructive group-hover/row:inline"
-                            onClick={() =>
-                              void removeItem({ id: row._id }).catch(() =>
-                                toast.error("Couldn't delete the row."),
-                              )
-                            }
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          <span className="hidden gap-0.5 group-hover/row:inline-flex">
+                            <button
+                              type="button"
+                              aria-label={`Edit ${row.label}`}
+                              title="Edit line"
+                              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
+                              onClick={() => void handleEditRow(row)}
+                            >
+                              <Pencil className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Delete row"
+                              title="Delete line"
+                              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive"
+                              onClick={() =>
+                                void removeItem({ id: row._id }).catch(() =>
+                                  toast.error("Couldn't delete the row."),
+                                )
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </span>
                         </td>
                       </tr>
                     ))
@@ -704,8 +716,15 @@ export default function CostingPanel({
                             type="number"
                             min="0"
                             step="any"
-                            value={draftMarkup ?? markupPct}
-                            onChange={(e) => setDraftMarkup(Number(e.target.value))}
+                            value={markupPct}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (Number.isFinite(v) && v >= 0 && activeFg) {
+                                void updateFg({ id: activeFg._id, markupPct: v }).catch(() =>
+                                  toast.error("Couldn't update the margin."),
+                                );
+                              }
+                            }}
                             className="w-14 rounded border bg-card px-1.5 py-0.5 text-right text-xs tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
                             aria-label="Margin percent"
                           />
@@ -737,7 +756,30 @@ export default function CostingPanel({
           </section>
 
           {rows.length > 0 && (
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <span
+                className={cn(
+                  "text-xs transition-opacity",
+                  isDirty ? "text-amber-600" : "text-muted-foreground/60 opacity-0",
+                )}
+              >
+                Unsaved changes
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                className={cn("rounded-lg", isDirty && "animate-pulse")}
+                disabled={!isDirty || savingSheet}
+                onClick={() => void saveSheet()}
+                title="Save all sheet edits (Ctrl/Cmd+S)"
+              >
+                {savingSheet ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Save className="size-3.5" />
+                )}
+                {isDirty ? "Save" : "Saved"}
+              </Button>
               <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={exportCsv}>
                 <Download className="size-3.5" />
                 Export CSV
