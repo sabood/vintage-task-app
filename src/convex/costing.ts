@@ -22,8 +22,14 @@ export const listMaterials = query({
 
 /** Add a raw material. */
 export const addMaterial = mutation({
-  args: { name: v.string(), unit: v.string(), pricePerUnit: v.number() },
-  handler: async (ctx, { name, unit, pricePerUnit }) => {
+  args: {
+    code: v.optional(v.string()),
+    name: v.string(),
+    category: v.optional(v.string()),
+    unit: v.string(),
+    pricePerUnit: v.number(),
+  },
+  handler: async (ctx, { code, name, category, unit, pricePerUnit }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
@@ -33,18 +39,22 @@ export const addMaterial = mutation({
     if (pricePerUnit < 0) throw new Error("Price can't be negative.");
     return await ctx.db.insert("rawMaterials", {
       ownerId: userId,
+      code: code?.trim() || undefined,
       name: clean,
+      category: category?.trim() || undefined,
       unit: cleanUnit,
       pricePerUnit,
     });
   },
 });
 
-/** Edit a raw material (name, unit, or price). */
+/** Edit a raw material (code, name, category, unit, or price). */
 export const updateMaterial = mutation({
   args: {
     id: v.id("rawMaterials"),
+    code: v.optional(v.string()),
     name: v.optional(v.string()),
+    category: v.optional(v.string()),
     unit: v.optional(v.string()),
     pricePerUnit: v.optional(v.number()),
   },
@@ -61,6 +71,9 @@ export const updateMaterial = mutation({
       patch.name = clean;
     }
     if (patch.unit !== undefined) patch.unit = patch.unit.trim() || "pcs";
+    if (patch.code !== undefined) patch.code = patch.code.trim() || undefined;
+    if (patch.category !== undefined)
+      patch.category = patch.category.trim() || undefined;
     if (patch.pricePerUnit !== undefined && patch.pricePerUnit < 0)
       throw new Error("Price can't be negative.");
     await ctx.db.patch(id, patch);

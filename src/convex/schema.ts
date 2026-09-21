@@ -125,7 +125,9 @@ const schema = defineSchema(
     // raw materials used for job/task costing (price per unit)
     rawMaterials: defineTable({
       ownerId: v.id("users"),
+      code: v.optional(v.string()), // material code / SKU
       name: v.string(),
+      category: v.optional(v.string()), // e.g. Wood, Metal, Paint
       unit: v.string(), // e.g. kg, m, pcs, L, hr
       pricePerUnit: v.number(),
     }).index("by_owner", ["ownerId"]),
