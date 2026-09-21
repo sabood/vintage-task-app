@@ -16,10 +16,11 @@ import {
   Package,
   Pencil,
   Plus,
+  Save,
   Sigma,
   Trash2,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
@@ -128,6 +129,13 @@ export default function CostingPanel({
   const [customQty, setCustomQty] = useState("1");
   const [customPrice, setCustomPrice] = useState("0");
 
+  // Draft state — cell edits stay local until "Save" is pressed.
+  const [drafts, setDrafts] = useState<
+    { id: Id<"costingItems">; label: string; qty: number; unitPrice: number }[]
+  >([]);
+  const [draftMarkup, setDraftMarkup] = useState<number | null>(null);
+  const [savingSheet, setSavingSheet] = useState(false);
+
   const activeFg =
     view?.kind === "fg"
       ? (finishedGoods.find((f) => f._id === view.fgId) ?? null)
@@ -146,6 +154,75 @@ export default function CostingPanel({
     const markup = subtotal * (markupPct / 100);
     return { subtotal, markup, grand: subtotal + markup };
   }, [rows, markupPct]);
+
+  // ── Draft (save-button) logic ─────────────────────────────────────
+  // Keep a local draft of every visible row; reset it when the sheet's
+  // server data changes shape (rows added/removed or another FG opened).
+  useEffect(() => {
+    setDrafts(
+      rows.map((r) => ({ id: r._id, label: r.label, qty: r.qty, unitPrice: r.unitPrice })),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, activeFg?._id]);
+  useEffect(() => {
+    setDraftMarkup(null);
+  }, [activeFg?._id, markupPct]);
+
+  const isDirty = useMemo(() => {
+    if (draftMarkup !== null && draftMarkup !== markupPct) return true;
+    if (drafts.length !== rows.length) return rows.length > 0;
+    return rows.some((r) => {
+      const d = drafts.find((x) => x.id === r._id);
+      return d ? d.label !== r.label || d.qty !== r.qty || d.unitPrice !== r.unitPrice : false;
+    });
+  }, [drafts, rows, draftMarkup, markupPct]);
+
+  const updateDraft = (id: Id<"costingItems">, patch: Partial<{ label: string; qty: number; unitPrice: number }>) =>
+    setDrafts((ds) => ds.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+
+  const saveSheet = async () => {
+    if (!activeFg) return;
+    setSavingSheet(true);
+    try {
+      for (const r of rows) {
+        const d = drafts.find((x) => x.id === r._id);
+        if (!d) continue;
+        const changed =
+          d.label !== r.label || d.qty !== r.qty || d.unitPrice !== r.unitPrice;
+        if (changed) {
+          await updateItem({
+            id: r._id,
+            label: d.label,
+            qty: d.qty,
+            unitPrice: d.unitPrice,
+          });
+        }
+      }
+      if (draftMarkup !== null && draftMarkup !== markupPct) {
+        await updateFg({ id: activeFg._id, markupPct: draftMarkup });
+      }
+      setDraftMarkup(null);
+      toast.success("Sheet saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't save the sheet.");
+    } finally {
+      setSavingSheet(false);
+    }
+  };
+
+  // Ctrl/Cmd+S saves the sheet.
+  useEffect(() => {
+    if (!isDirty) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void saveSheet();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty, drafts, draftMarkup]);
 
   const addMaterialRow = async () => {
     if (!activeFg || !addingMaterialId) return;
@@ -377,6 +454,21 @@ export default function CostingPanel({
             >
               Edit details
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              className={cn("rounded-lg", isDirty && "animate-pulse")}
+              disabled={!isDirty || savingSheet}
+              onClick={() => void saveSheet()}
+              title="Save all sheet edits (Ctrl/Cmd+S)"
+            >
+              {savingSheet ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Save className="size-3.5" />
+              )}
+              {isDirty ? "Save changes" : "Saved"}
+            </Button>
           </div>
 
           {/* image lightbox */}
@@ -536,12 +628,8 @@ export default function CostingPanel({
                         </td>
                         <td className="px-1 py-1">
                           <input
-                            value={row.label}
-                            onChange={(e) =>
-                              void updateItem({ id: row._id, label: e.target.value }).catch(
-                                () => toast.error("Couldn't rename the line."),
-                              )
-                            }
+                            value={drafts.find((d) => d.id === row._id)?.label ?? row.label}
+                            onChange={(e) => updateDraft(row._id, { label: e.target.value })}
                             className={cellCls}
                             aria-label="Description"
                           />
@@ -551,11 +639,9 @@ export default function CostingPanel({
                             type="number"
                             min="0"
                             step="any"
-                            value={row.qty}
+                            value={drafts.find((d) => d.id === row._id)?.qty ?? row.qty}
                             onChange={(e) =>
-                              void updateItem({ id: row._id, qty: Number(e.target.value) }).catch(
-                                () => {},
-                              )
+                              updateDraft(row._id, { qty: Number(e.target.value) })
                             }
                             className={cn(cellCls, "text-right tabular-nums")}
                             aria-label="Quantity"
@@ -567,19 +653,20 @@ export default function CostingPanel({
                             type="number"
                             min="0"
                             step="any"
-                            value={row.unitPrice}
+                            value={drafts.find((d) => d.id === row._id)?.unitPrice ?? row.unitPrice}
                             onChange={(e) =>
-                              void updateItem({
-                                id: row._id,
-                                unitPrice: Number(e.target.value),
-                              }).catch(() => {})
+                              updateDraft(row._id, { unitPrice: Number(e.target.value) })
                             }
                             className={cn(cellCls, "text-right tabular-nums")}
                             aria-label="Unit price"
                           />
                         </td>
                         <td className="px-3 py-1.5 text-right font-medium tabular-nums">
-                          {money(row.qty * row.unitPrice, currency)}
+                          {money(
+                            (drafts.find((d) => d.id === row._id)?.qty ?? row.qty) *
+                              (drafts.find((d) => d.id === row._id)?.unitPrice ?? row.unitPrice),
+                            currency,
+                          )}
                         </td>
                         <td className="px-2 py-1 text-center">
                           <button
@@ -617,13 +704,8 @@ export default function CostingPanel({
                             type="number"
                             min="0"
                             step="any"
-                            value={markupPct}
-                            onChange={(e) =>
-                              void updateFg({
-                                id: activeFg._id,
-                                markupPct: Number(e.target.value),
-                              }).catch(() => {})
-                            }
+                            value={draftMarkup ?? markupPct}
+                            onChange={(e) => setDraftMarkup(Number(e.target.value))}
                             className="w-14 rounded border bg-card px-1.5 py-0.5 text-right text-xs tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
                             aria-label="Markup percent"
                           />
