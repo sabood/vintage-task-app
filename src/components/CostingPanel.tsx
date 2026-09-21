@@ -16,6 +16,7 @@ import {
   Package,
   Pencil,
   Plus,
+  Printer,
   Save,
   Sigma,
   Trash2,
@@ -335,8 +336,8 @@ export default function CostingPanel({
           (r.qty * r.unitPrice).toFixed(2),
         ].join(","),
       ),
-      `"Markup (${markupPct}%)",,,,"${totals.markup.toFixed(2)}"`,
-      `"TOTAL",,,,"${totals.grand.toFixed(2)}"`,
+      `"Margin (${markupPct}%)",,,,"${totals.markup.toFixed(2)}"`,
+      `"SALES PRICE",,,,"${totals.grand.toFixed(2)}"`,
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -346,6 +347,113 @@ export default function CostingPanel({
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  /** Open a print-ready costing sheet in a new window and show the print dialog. */
+  const printSheet = () => {
+    if (!activeFg) return;
+    const cur = currency;
+    const money = (v: number) =>
+      `${cur}${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const today = new Date().toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const codeLine = [
+      activeFg.projectCode ? activeFg.projectCode : null,
+      activeFg.code ? activeFg.code : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const rowsHtml = rows
+      .map(
+        (r, i) => `
+        <tr>
+          <td class="num">${i + 1}</td>
+          <td>${escapeHtml(r.label)}</td>
+          <td class="num">${r.qty.toLocaleString()}</td>
+          <td class="muted">${escapeHtml(r.unit ?? "—")}</td>
+          <td class="num">${r.unitPrice.toLocaleString()}</td>
+          <td class="num strong">${money(r.qty * r.unitPrice)}</td>
+        </tr>`,
+      )
+      .join("");
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) {
+      toast.error("Allow pop-ups to print the sheet.");
+      return;
+    }
+    win.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Costing sheet — ${escapeHtml(activeFg.name)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #18181b; margin: 40px; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 8px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .meta { font-size: 12px; color: #52525b; line-height: 1.5; }
+    .brand { font-size: 11px; letter-spacing: 3px; color: #4f46e5; font-weight: 700; margin-bottom: 6px; }
+    .date { font-size: 12px; color: #52525b; text-align: right; }
+    img.photo { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #e4e4e7; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #71717a; border-bottom: 1.5px solid #d4d4d8; padding: 8px 10px; }
+    td { border-bottom: 1px solid #e4e4e7; padding: 9px 10px; }
+    td.num, th.num { text-align: right; }
+    td.strong { font-weight: 600; }
+    .muted { color: #71717a; }
+    .totals { margin-top: 16px; margin-left: auto; width: 46%; font-size: 13px; }
+    .totals td { border: none; padding: 6px 10px; }
+    .totals .lbl { text-align: right; color: #52525b; }
+    .totals .val { text-align: right; font-variant-numeric: tabular-nums; }
+    .totals tr.grand td { border-top: 1.5px solid #4f46e5; font-weight: 700; font-size: 15px; color: #4f46e5; padding-top: 10px; }
+    .note { margin-top: 8px; font-size: 12px; color: #71717a; }
+    @page { margin: 14mm; }
+    @media print { body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <div class="brand">COSTING SHEET</div>
+      <h1>${escapeHtml(activeFg.name)}</h1>
+      <div class="meta">
+        Project: ${escapeHtml(activeFg.projectName)}${codeLine ? ` &nbsp;·&nbsp; ${escapeHtml(codeLine)}` : ""}<br />
+        ${activeFg.unit ? `Sold per: ${escapeHtml(activeFg.unit)} &nbsp;·&nbsp; ` : ""}Margin: ${markupPct}%
+      </div>
+    </div>
+    <div style="text-align:right">
+      ${activeFg.imageUrl ? `<img class="photo" src="${activeFg.imageUrl}" alt="" />` : ""}
+      <div class="date">${today}</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="num">#</th><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price</th><th class="num">Amount</th></tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <table class="totals">
+    <tr><td class="lbl">Subtotal</td><td class="val">${money(totals.subtotal)}</td></tr>
+    <tr><td class="lbl">Margin (${markupPct}%)</td><td class="val">+${money(totals.markup)}</td></tr>
+    <tr class="grand"><td class="lbl">Sales price</td><td class="val">${money(totals.grand)}</td></tr>
+  </table>
+  ${activeFg.note ? `<p class="note">${escapeHtml(activeFg.note)}</p>` : ""}
+  <script>window.onload = function () { window.print(); };</script>
+</body>
+</html>`);
+    win.document.close();
+  };
+
+  /** Minimal HTML escaping for interpolated values. */
+  function escapeHtml(value: string) {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
 
   return (
     <div>
@@ -804,6 +912,17 @@ export default function CostingPanel({
               <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={exportCsv}>
                 <Download className="size-3.5" />
                 Export CSV
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-lg"
+                onClick={printSheet}
+                title="Print this costing sheet"
+              >
+                <Printer className="size-3.5" />
+                Print
               </Button>
             </div>
           )}
