@@ -25,15 +25,29 @@ export default function MaterialsSheet({
   const updateMaterial = useMutation(api.costing.updateMaterial);
   const removeMaterial = useMutation(api.costing.removeMaterial);
 
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
   const [unit, setUnit] = useState("pcs");
   const [price, setPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
 
+  const categories = useMemo(
+    () => Array.from(new Set(materials.map((m) => m.category).filter(Boolean) as string[])).sort(),
+    [materials],
+  );
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = q ? materials.filter((m) => m.name.toLowerCase().includes(q)) : materials;
+    const list = q
+      ? materials.filter(
+          (m) =>
+            m.name.toLowerCase().includes(q) ||
+            (m.code ?? "").toLowerCase().includes(q) ||
+            (m.category ?? "").toLowerCase().includes(q),
+        )
+      : materials;
     return [...list].sort((a, b) => a.name.localeCompare(b.name));
   }, [materials, search]);
 
@@ -51,7 +65,14 @@ export default function MaterialsSheet({
     }
     setSaving(true);
     try {
-      await addMaterial({ name: clean, unit: unit.trim() || "pcs", pricePerUnit: priceNum });
+      await addMaterial({
+        code: code.trim() || undefined,
+        name: clean,
+        category: category.trim() || undefined,
+        unit: unit.trim() || "pcs",
+        pricePerUnit: priceNum,
+      });
+      setCode("");
       setName("");
       setPrice("");
     } catch (error) {
@@ -63,9 +84,15 @@ export default function MaterialsSheet({
 
   const exportCsv = () => {
     const lines = [
-      ["Material", "Unit", "Price per unit"].join(","),
+      ["Code", "Name", "Category", "Unit", "Price per unit"].join(","),
       ...rows.map((m) =>
-        [`"${m.name.replace(/"/g, '""')}"`, m.unit, String(m.pricePerUnit)].join(","),
+        [
+          `"${(m.code ?? "").replace(/"/g, '""')}"`,
+          `"${m.name.replace(/"/g, '""')}"`,
+          `"${(m.category ?? "").replace(/"/g, '""')}"`,
+          m.unit,
+          String(m.pricePerUnit),
+        ].join(","),
       ),
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
@@ -90,17 +117,37 @@ export default function MaterialsSheet({
         </p>
         <div className="flex flex-wrap gap-1.5">
           <Input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Code, e.g. RM-001"
+            aria-label="Material code"
+            className="h-9 w-28 rounded-lg text-sm"
+          />
+          <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Material name, e.g. Teak wood"
-            className="h-9 min-w-[180px] flex-1 rounded-lg text-sm"
+            className="h-9 min-w-[160px] flex-1 rounded-lg text-sm"
           />
+          <Input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            list="material-categories"
+            placeholder="Category"
+            aria-label="Category"
+            className="h-9 w-32 rounded-lg text-sm"
+          />
+          <datalist id="material-categories">
+            {categories.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
           <Input
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
             placeholder="Unit"
             aria-label="Unit"
-            className="h-9 w-20 rounded-lg text-sm"
+            className="h-9 w-16 rounded-lg text-sm"
           />
           <Input
             type="number"
@@ -108,9 +155,9 @@ export default function MaterialsSheet({
             step="any"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="Price"
+            placeholder="Unit price"
             aria-label="Price per unit"
-            className="h-9 w-28 rounded-lg text-sm"
+            className="h-9 w-24 rounded-lg text-sm"
           />
           <Button type="submit" size="sm" className="h-9 rounded-lg" disabled={saving}>
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
@@ -125,7 +172,8 @@ export default function MaterialsSheet({
           <p className="text-sm font-semibold">
             Raw materials
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {rows.length} item{rows.length === 1 ? "" : "s"} · used for costing only
+              {rows.length} item{rows.length === 1 ? "" : "s"}
+              {categories.length > 0 ? ` · ${categories.length} categories` : ""}
             </span>
           </p>
           <div className="flex items-center gap-2">
@@ -151,23 +199,25 @@ export default function MaterialsSheet({
             <thead>
               <tr className="border-b border-border/70 bg-muted/40 text-left text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
                 <th className="w-10 px-3 py-2 font-semibold">#</th>
-                <th className="px-3 py-2 font-semibold">Material</th>
-                <th className="w-24 px-3 py-2 font-semibold">Unit</th>
-                <th className="w-36 px-3 py-2 text-right font-semibold">Price / unit</th>
+                <th className="w-24 px-3 py-2 font-semibold">Code</th>
+                <th className="px-3 py-2 font-semibold">Name</th>
+                <th className="w-32 px-3 py-2 font-semibold">Category</th>
+                <th className="w-16 px-3 py-2 font-semibold">Unit</th>
+                <th className="w-28 px-3 py-2 text-right font-semibold">Unit price</th>
                 <th className="w-10 px-2 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-2 size-4 animate-spin" />
                     Loading materials…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     {search
                       ? `Nothing matches “${search}”.`
                       : "No raw materials yet — add your first one above."}
@@ -179,6 +229,17 @@ export default function MaterialsSheet({
                     <td className="px-3 py-1 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
                     <td className="px-1 py-1">
                       <input
+                        value={m.code ?? ""}
+                        onChange={(e) =>
+                          void updateMaterial({ id: m._id, code: e.target.value }).catch(() => {})
+                        }
+                        className={cn(cellCls, "font-mono text-xs")}
+                        aria-label="Material code"
+                        placeholder="—"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
                         value={m.name}
                         onChange={(e) =>
                           void updateMaterial({ id: m._id, name: e.target.value }).catch(
@@ -187,6 +248,17 @@ export default function MaterialsSheet({
                         }
                         className={cellCls}
                         aria-label="Material name"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        value={m.category ?? ""}
+                        onChange={(e) =>
+                          void updateMaterial({ id: m._id, category: e.target.value }).catch(() => {})
+                        }
+                        className={cellCls}
+                        aria-label="Category"
+                        placeholder="—"
                       />
                     </td>
                     <td className="px-1 py-1">

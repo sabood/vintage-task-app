@@ -253,7 +253,9 @@ export default function CostingPanel({
                   <option value="">Choose material…</option>
                   {materials.map((m) => (
                     <option key={m._id} value={m._id}>
-                      {m.name} ({m.pricePerUnit}/{m.unit})
+                      {m.code ? `${m.code} · ` : ""}
+                      {m.name}
+                      {m.category ? ` [${m.category}]` : ""} ({m.pricePerUnit}/{m.unit})
                     </option>
                   ))}
                 </select>
