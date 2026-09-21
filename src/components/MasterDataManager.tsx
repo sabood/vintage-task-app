@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
+import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 
 type UnitDoc = Doc<"costUnits">;
@@ -37,6 +38,7 @@ export default function MasterDataManager({
   const addCategoryM = useMutation(api.costing.addCategory);
   const renameCategoryM = useMutation(api.costing.renameCategory);
   const removeCategoryM = useMutation(api.costing.removeCategory);
+  const { confirm } = useAppDialogs();
 
   const [tab, setTab] = useState<"units" | "categories">("units");
   const [newUnit, setNewUnit] = useState("");
@@ -119,7 +121,13 @@ export default function MasterDataManager({
   };
 
   const handleDeleteUnit = async (u: UnitDoc) => {
-    if (!window.confirm(`Delete unit “${u.name}”? Existing items keep their value.`)) return;
+    const ok = await confirm({
+      title: `Delete unit “${u.name}”?`,
+      message: "Items using this unit keep their stored value — nothing else changes.",
+      confirmLabel: "Delete unit",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeUnitM({ id: u._id });
     } catch (error) {
@@ -129,11 +137,16 @@ export default function MasterDataManager({
 
   const handleDeleteCategory = async (c: CategoryDoc) => {
     const subs = subsOf(c._id);
-    const msg =
-      subs.length > 0
-        ? `Delete “${c.name}” and its ${subs.length} sub-${subs.length === 1 ? "category" : "categories"}?`
-        : `Delete “${c.name}”? Existing items keep their value.`;
-    if (!window.confirm(msg)) return;
+    const ok = await confirm({
+      title: `Delete “${c.name}”?`,
+      message:
+        subs.length > 0
+          ? `This category and its ${subs.length} sub-${subs.length === 1 ? "category" : "categories"} will be removed. Existing items keep their stored value.`
+          : "Existing items keep their stored value — nothing else changes.",
+      confirmLabel: "Delete category",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeCategoryM({ id: c._id });
     } catch (error) {

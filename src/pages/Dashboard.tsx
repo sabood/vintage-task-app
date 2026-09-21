@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 
 type Section = "tasks" | "notes" | "costing";
@@ -34,6 +35,7 @@ function greetingForHour(hour: number) {
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { confirm, prompt, promptMulti } = useAppDialogs();
   const [section, setSection] = useState<Section>("tasks");
 
   // ── Notes tree state (rendered inside the side menu) ───────────────
@@ -94,7 +96,14 @@ export default function Dashboard() {
 
   // ── Notes actions ───────────────────────────────────────────────────
   const handleNewNotebook = async () => {
-    const title = window.prompt("Notebook name", "My notebook");
+    const title = await prompt({
+      title: "New notebook",
+      label: "Notebook name",
+      placeholder: "My notebook",
+      initial: "My notebook",
+      required: true,
+      confirmLabel: "Create",
+    });
     if (title === null) return;
     const clean = title.trim();
     if (!clean) {
@@ -114,7 +123,12 @@ export default function Dashboard() {
   };
 
   const handleRenameNotebook = async (nb: { _id: NotebookId; title: string }) => {
-    const title = window.prompt("Rename notebook", nb.title);
+    const title = await prompt({
+      title: "Rename notebook",
+      label: "Notebook name",
+      initial: nb.title,
+      required: true,
+    });
     if (title === null) return;
     const clean = title.trim();
     if (!clean) return;
@@ -128,7 +142,13 @@ export default function Dashboard() {
   };
 
   const handleDeleteNotebook = async (nb: { _id: NotebookId; title: string }) => {
-    if (!window.confirm(`Delete “${nb.title}” and all of its pages?`)) return;
+    const ok = await confirm({
+      title: `Delete “${nb.title}”?`,
+      message: "The notebook and all of its pages will be permanently removed. This cannot be undone.",
+      confirmLabel: "Delete notebook",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeNotebook({ id: nb._id });
       if (activeNotebookId === nb._id) setActiveNotebookId(null);
@@ -163,7 +183,12 @@ export default function Dashboard() {
   };
 
   const handleRenamePage = async (page: { _id: PageId; title: string }) => {
-    const title = window.prompt("Rename page", page.title);
+    const title = await prompt({
+      title: "Rename page",
+      label: "Page name",
+      initial: page.title,
+      required: true,
+    });
     if (title === null) return;
     const clean = title.trim();
     if (!clean) return;
@@ -177,7 +202,13 @@ export default function Dashboard() {
   };
 
   const handleDeletePage = async (page: { _id: PageId; title: string }) => {
-    if (!window.confirm(`Delete “${page.title}” and its sub-pages?`)) return;
+    const ok = await confirm({
+      title: `Delete “${page.title}”?`,
+      message: "The page and its sub-pages will be permanently removed. This cannot be undone.",
+      confirmLabel: "Delete page",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removePage({ id: page._id });
       if (activePageId === page._id) setActivePageId(null);
@@ -208,7 +239,14 @@ export default function Dashboard() {
 
   // ── Task list actions ───────────────────────────────────────────────
   const handleNewList = async () => {
-    const name = window.prompt("List name", "My list");
+    const name = await prompt({
+      title: "New list",
+      label: "List name",
+      placeholder: "My list",
+      initial: "My list",
+      required: true,
+      confirmLabel: "Create",
+    });
     if (name === null) return;
     const clean = name.trim();
     if (!clean) {
@@ -224,7 +262,12 @@ export default function Dashboard() {
   };
 
   const handleRenameList = async (list: { _id: ListId; name: string }) => {
-    const name = window.prompt("Rename list", list.name);
+    const name = await prompt({
+      title: "Rename list",
+      label: "List name",
+      initial: list.name,
+      required: true,
+    });
     if (name === null) return;
     const clean = name.trim();
     if (!clean) return;
@@ -236,8 +279,13 @@ export default function Dashboard() {
   };
 
   const handleDeleteList = async (list: { _id: ListId; name: string }) => {
-    if (!window.confirm(`Delete “${list.name}”? Its tasks move to the default list.`))
-      return;
+    const ok = await confirm({
+      title: `Delete “${list.name}”?`,
+      message: "The list is removed; its tasks move to the default list.",
+      confirmLabel: "Delete list",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeList({ id: list._id });
       if (activeTaskView === list._id) setActiveTaskView(null);
@@ -248,7 +296,14 @@ export default function Dashboard() {
   };
 
   const handleNewFolder = async () => {
-    const name = window.prompt("Folder name", "School");
+    const name = await prompt({
+      title: "New folder",
+      label: "Folder name",
+      placeholder: "School",
+      initial: "School",
+      required: true,
+      confirmLabel: "Create",
+    });
     if (name === null) return;
     const clean = name.trim();
     if (!clean) {
@@ -263,7 +318,13 @@ export default function Dashboard() {
   };
 
   const handleDeleteFolder = async (folder: { _id: FolderId; name: string }) => {
-    if (!window.confirm(`Delete folder “${folder.name}”? Its lists are kept.`)) return;
+    const ok = await confirm({
+      title: `Delete folder “${folder.name}”?`,
+      message: "The folder is removed; its lists are kept and become standalone.",
+      confirmLabel: "Delete folder",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeFolderM({ id: folder._id });
       toast.success("Folder deleted.");
@@ -282,21 +343,25 @@ export default function Dashboard() {
       toast.error('Create a folder first — use “New folder” in the sidebar.');
       return;
     }
-    const options = [
-      ...folders.map((f, i) => `${i + 1}. ${f.name}`),
-      "0. Remove from folder",
-    ];
-    const pick = window.prompt(
-      `Move “${list.name}” to which folder?\n\n${options.join("\n")}`,
-      "1",
-    );
+    // Simple folder picker using the styled dialog (type a number).
+    const options = folders.map((f, i) => `${i + 1}. ${f.name}`);
+    const pick = await prompt({
+      title: `Move “${list.name}”`,
+      message: `Folders:\n${options.join("\n")}\n\nEnter a folder number to move the list there.`,
+      placeholder: `1–${folders.length}`,
+      inputType: "number",
+      confirmLabel: "Move",
+      validate: (v) => {
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 1 || n > folders.length)
+          return `Enter a number between 1 and ${folders.length}.`;
+        return null;
+      },
+    });
     if (pick === null) return;
     const n = Number(pick.trim());
     const folder = folders[n - 1];
-    if (!folder || Number.isNaN(n)) {
-      toast.error("Pick a number from the list.");
-      return;
-    }
+    if (!folder) return;
     try {
       await setListFolderM({ id: list._id, folderId: folder._id });
       toast.success(`“${list.name}” moved to “${folder.name}”.`);
@@ -314,10 +379,16 @@ export default function Dashboard() {
   const [costingView, setCostingView] = useState<CostingView>(null);
 
   const handleNewFg = async (projectName: string) => {
-    const cleanProject =
-      projectName.trim() || window.prompt("Project name", "New project")?.trim() || "";
+    const cleanProject = projectName.trim();
     if (!cleanProject) return;
-    const name = window.prompt(`New product under “${cleanProject}”`, "Product");
+    const name = await prompt({
+      title: `New product under “${cleanProject}”`,
+      label: "Product name",
+      placeholder: "Product",
+      initial: "Product",
+      required: true,
+      confirmLabel: "Create",
+    });
     if (name === null) return;
     const cleanName = name.trim();
     if (!cleanName) {
@@ -333,7 +404,12 @@ export default function Dashboard() {
   };
 
   const handleRenameFg = async (fg: { _id: FgId; name: string; projectName: string }) => {
-    const name = window.prompt("Product name", fg.name);
+    const name = await prompt({
+      title: "Rename product",
+      label: "Product name",
+      initial: fg.name,
+      required: true,
+    });
     if (name === null) return;
     const clean = name.trim();
     if (!clean) return;
@@ -353,17 +429,31 @@ export default function Dashboard() {
     note?: string;
     markupPct?: number;
   }) => {
-    const project = window.prompt("Project", fg.projectName);
-    if (project === null) return;
-    const code = window.prompt("Product code / SKU", fg.code ?? "");
-    if (code === null) return;
-    const unit = window.prompt("Sold per (unit)", fg.unit ?? "pcs");
-    if (unit === null) return;
-    const note = window.prompt("Product note", fg.note ?? "");
-    if (note === null) return;
-    const markupRaw = window.prompt("Profit markup %", String(fg.markupPct ?? 0));
-    if (markupRaw === null) return;
-    const markup = Number(markupRaw);
+    const result = await promptMulti({
+      title: `Edit “${fg.name}”`,
+      message: "Update the product details.",
+      columns: 2,
+      confirmLabel: "Save changes",
+      fields: [
+        { key: "project", label: "Project", initial: fg.projectName, required: true },
+        { key: "name", label: "Product name", initial: fg.name, required: true },
+        { key: "code", label: "Code / SKU", initial: fg.code ?? "" },
+        { key: "unit", label: "Sold per (unit)", initial: fg.unit ?? "pcs" },
+        {
+          key: "markup",
+          label: "Profit markup %",
+          initial: String(fg.markupPct ?? 0),
+          type: "number",
+          validate: (v) =>
+            v && (Number.isNaN(Number(v)) || Number(v) < 0)
+              ? "Enter a valid percentage."
+              : null,
+        },
+        { key: "note", label: "Note", initial: fg.note ?? "" },
+      ],
+    });
+    if (result === null) return;
+    const markup = Number(result.markup || 0);
     if (!Number.isFinite(markup) || markup < 0) {
       toast.error("Enter a valid markup.");
       return;
@@ -371,10 +461,11 @@ export default function Dashboard() {
     try {
       await updateFgM({
         id: fg._id,
-        projectName: project.trim() || fg.projectName,
-        code,
-        unit,
-        note,
+        projectName: result.project.trim() || fg.projectName,
+        name: result.name.trim() || fg.name,
+        code: result.code,
+        unit: result.unit,
+        note: result.note,
         markupPct: markup,
       });
     } catch (error) {
@@ -383,7 +474,13 @@ export default function Dashboard() {
   };
 
   const handleDeleteFg = async (fg: { _id: FgId; name: string }) => {
-    if (!window.confirm(`Delete product “${fg.name}” and all its costing lines?`)) return;
+    const ok = await confirm({
+      title: `Delete “${fg.name}”?`,
+      message: "The product and all its costing lines will be permanently removed. This cannot be undone.",
+      confirmLabel: "Delete product",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeFgM({ id: fg._id });
       if (costingView?.kind === "fg" && costingView.fgId === fg._id) setCostingView(null);

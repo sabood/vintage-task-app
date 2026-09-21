@@ -17,6 +17,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
+import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 
 type FgDoc = Doc<"finishedGoods">;
@@ -37,6 +38,7 @@ export default function ProductForm({
   initialProject?: string | null;
 }) {
   const removeFg = useMutation(api.costing.removeFinishedGood);
+  const { confirm } = useAppDialogs();
   const addFg = useMutation(api.costing.addFinishedGood);
   const updateFg = useMutation(api.costing.updateFinishedGood);
 
@@ -154,7 +156,13 @@ export default function ProductForm({
   };
 
   const handleDelete = async (fg: FgDoc) => {
-    if (!window.confirm(`Delete product “${fg.name}” and all its costing lines?`)) return;
+    const ok = await confirm({
+      title: `Delete “${fg.name}”?`,
+      message: "The product and all its costing lines will be permanently removed. This cannot be undone.",
+      confirmLabel: "Delete product",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await removeFg({ id: fg._id });
       toast.success("Product deleted.");
