@@ -2,9 +2,18 @@ import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, Loader2, Package, Plus, Search as SearchIcon, Trash2 } from "lucide-react";
+import MasterDataManager from "@/components/MasterDataManager";
+import {
+  Download,
+  Loader2,
+  Package,
+  Plus,
+  Search as SearchIcon,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -25,10 +34,24 @@ export default function MaterialsSheet({
   const updateMaterial = useMutation(api.costing.updateMaterial);
   const removeMaterial = useMutation(api.costing.removeMaterial);
 
+  // managed master data for dropdowns
+  const masterUnits = useQuery(api.costing.listUnits);
+  const masterCategories = useQuery(api.costing.listCategories);
+  const units = masterUnits ?? [];
+  const parentCategories = (masterCategories ?? []).filter((c) => c.parentId === undefined);
+  const allCategories = masterCategories ?? [];
+  const subsOf = (name: string) => {
+    const parent = parentCategories.find((c) => c.name === name);
+    if (!parent) return [];
+    return allCategories.filter((c) => c.parentId === parent._id);
+  };
+  const [showManager, setShowManager] = useState(false);
+
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
-  const [unit, setUnit] = useState("pcs");
+  const [subCategory, setSubCategory] = useState("");
+  const [unit, setUnit] = useState("");
   const [price, setPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -72,11 +95,13 @@ export default function MaterialsSheet({
         code: code.trim() || undefined,
         name: clean,
         category: category.trim() || undefined,
+        subCategory: subCategory.trim() || undefined,
         unit: unit.trim() || "pcs",
         pricePerUnit: priceNum,
       });
       setCode("");
       setName("");
+      setSubCategory("");
       setPrice("");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't add the material.");
@@ -87,12 +112,13 @@ export default function MaterialsSheet({
 
   const exportCsv = () => {
     const lines = [
-      ["Code", "Name", "Category", "Unit", "Price per unit"].join(","),
+      ["Code", "Name", "Category", "Sub-category", "Unit", "Price per unit"].join(","),
       ...rows.map((m) =>
         [
           `"${(m.code ?? "").replace(/"/g, '""')}"`,
           `"${m.name.replace(/"/g, '""')}"`,
           `"${(m.category ?? "").replace(/"/g, '""')}"`,
+          `"${(m.subCategory ?? "").replace(/"/g, '""')}"`,
           m.unit,
           String(m.pricePerUnit),
         ].join(","),
@@ -114,10 +140,29 @@ export default function MaterialsSheet({
         onSubmit={handleAdd}
         className="rounded-xl border bg-card p-3 shadow-sm"
       >
-        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          <Package className="size-3.5" />
-          Add raw material
-        </p>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            <Package className="size-3.5" />
+            Add raw material
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowManager((v) => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Settings2 className="size-3.5" />
+            Manage units & categories
+          </button>
+        </div>
+        {showManager && (
+          <div className="mb-3">
+            <MasterDataManager
+              units={units}
+              categories={allCategories}
+              onClose={() => setShowManager(false)}
+            />
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5">
           <Input
             value={code}
@@ -130,28 +175,51 @@ export default function MaterialsSheet({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Material name, e.g. Teak wood"
-            className="h-9 min-w-[160px] flex-1 rounded-lg text-sm"
+            className="h-9 min-w-[150px] flex-1 rounded-lg text-sm"
           />
-          <Input
+          <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            list="material-categories"
-            placeholder="Category"
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setSubCategory("");
+            }}
             aria-label="Category"
-            className="h-9 w-32 rounded-lg text-sm"
-          />
-          <datalist id="material-categories">
-            {categories.map((c) => (
-              <option key={c} value={c} />
+            className="h-9 w-32 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="">Category…</option>
+            {parentCategories.map((c) => (
+              <option key={c._id} value={c.name}>
+                {c.name}
+              </option>
             ))}
-          </datalist>
-          <Input
+          </select>
+          <select
+            value={subCategory}
+            onChange={(e) => setSubCategory(e.target.value)}
+            aria-label="Sub-category"
+            disabled={!category || subsOf(category).length === 0}
+            className="h-9 w-32 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+          >
+            <option value="">Sub-category…</option>
+            {subsOf(category).map((c) => (
+              <option key={c._id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
-            placeholder="Unit"
             aria-label="Unit"
-            className="h-9 w-16 rounded-lg text-sm"
-          />
+            className="h-9 w-20 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="">Unit…</option>
+            {units.map((u) => (
+              <option key={u._id} value={u.name}>
+                {u.name}
+              </option>
+            ))}
+          </select>
           <Input
             type="number"
             min="0"
@@ -218,7 +286,8 @@ export default function MaterialsSheet({
                 <th className="w-10 px-3 py-2 font-semibold">#</th>
                 <th className="w-24 px-3 py-2 font-semibold">Code</th>
                 <th className="px-3 py-2 font-semibold">Name</th>
-                <th className="w-32 px-3 py-2 font-semibold">Category</th>
+                <th className="w-28 px-3 py-2 font-semibold">Category</th>
+                <th className="w-28 px-3 py-2 font-semibold">Sub-cat.</th>
                 <th className="w-16 px-3 py-2 font-semibold">Unit</th>
                 <th className="w-28 px-3 py-2 text-right font-semibold">Unit price</th>
                 <th className="w-10 px-2 py-2" />
@@ -227,16 +296,16 @@ export default function MaterialsSheet({
             <tbody className="divide-y divide-border/60">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-2 size-4 animate-spin" />
                     Loading materials…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                    {search
-                      ? `Nothing matches “${search}”.`
+                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
+                    {search || categoryFilter !== "all"
+                      ? "Nothing matches the current search/filter."
                       : "No raw materials yet — add your first one above."}
                   </td>
                 </tr>
@@ -268,25 +337,59 @@ export default function MaterialsSheet({
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <input
+                      <select
                         value={m.category ?? ""}
                         onChange={(e) =>
                           void updateMaterial({ id: m._id, category: e.target.value }).catch(() => {})
                         }
-                        className={cellCls}
+                        className={cn(cellCls, "cursor-pointer")}
                         aria-label="Category"
-                        placeholder="—"
-                      />
+                      >
+                        <option value="">—</option>
+                        {parentCategories.map((c) => (
+                          <option key={c._id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        value={m.unit}
+                      <select
+                        value={m.subCategory ?? ""}
+                        onChange={(e) =>
+                          void updateMaterial({ id: m._id, subCategory: e.target.value }).catch(
+                            () => {},
+                          )
+                        }
+                        className={cn(cellCls, "cursor-pointer")}
+                        aria-label="Sub-category"
+                      >
+                        <option value="">—</option>
+                        {subsOf(m.category ?? "").map((c) => (
+                          <option key={c._id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-1 py-1">
+                      <select
+                        value={units.some((u) => u.name === m.unit) ? m.unit : ""}
                         onChange={(e) =>
                           void updateMaterial({ id: m._id, unit: e.target.value }).catch(() => {})
                         }
-                        className={cn(cellCls)}
+                        className={cn(cellCls, "cursor-pointer")}
                         aria-label="Unit"
-                      />
+                      >
+                        {units.some((u) => u.name === m.unit) ? null : (
+                          <option value="">{m.unit}</option>
+                        )}
+                        {units.map((u) => (
+                          <option key={u._id} value={u.name}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-1 py-1">
                       <input

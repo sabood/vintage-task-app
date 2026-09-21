@@ -127,8 +127,9 @@ const schema = defineSchema(
       ownerId: v.id("users"),
       code: v.optional(v.string()), // material code / SKU
       name: v.string(),
-      category: v.optional(v.string()), // e.g. Wood, Metal, Paint
-      unit: v.string(), // e.g. kg, m, pcs, L, hr
+      category: v.optional(v.string()), // managed master value
+      subCategory: v.optional(v.string()), // managed master value
+      unit: v.string(), // managed master value, e.g. kg, m, pcs, L, hr
       pricePerUnit: v.number(),
     }).index("by_owner", ["ownerId"]),
 
@@ -147,6 +148,8 @@ const schema = defineSchema(
       name: v.string(), // FG product name, e.g. "Wooden chair"
       code: v.optional(v.string()), // product code / SKU
       unit: v.optional(v.string()), // sold per: pcs, box, set…
+      category: v.optional(v.string()), // managed master value
+      subCategory: v.optional(v.string()), // managed master value
       note: v.optional(v.string()), // short product description
       currency: v.optional(v.string()),
       markupPct: v.optional(v.number()),
@@ -166,6 +169,19 @@ const schema = defineSchema(
       .index("by_sheet", ["sheetId"])
       .index("by_fg", ["fgId"])
       .index("by_owner", ["ownerId"]),
+
+    // managed units of measure for costing (kg, pcs, m…)
+    costUnits: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
+    }).index("by_owner", ["ownerId"]),
+
+    // managed categories (parentId undefined) and sub-categories
+    costCategories: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
+      parentId: v.optional(v.id("costCategories")), // set for sub-categories
+    }).index("by_owner", ["ownerId"]),
 
     // notebooks: the top level of the notes workspace (OneNote-style)
     notebooks: defineTable({

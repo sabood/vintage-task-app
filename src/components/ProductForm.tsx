@@ -2,14 +2,15 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import MasterDataManager from "@/components/MasterDataManager";
 import {
   Download,
   Folder,
   Loader2,
   Package,
-  Pencil,
   Plus,
   Search as SearchIcon,
+  Settings2,
   Sigma,
   Trash2,
 } from "lucide-react";
@@ -35,11 +36,27 @@ export default function ProductForm({
 }) {
   const removeFg = useMutation(api.costing.removeFinishedGood);
   const addFg = useMutation(api.costing.addFinishedGood);
+  const updateFg = useMutation(api.costing.updateFinishedGood);
+
+  // managed master data for dropdowns
+  const masterUnits = useQuery(api.costing.listUnits);
+  const masterCategories = useQuery(api.costing.listCategories);
+  const units = masterUnits ?? [];
+  const parentCategories = (masterCategories ?? []).filter((c) => c.parentId === undefined);
+  const allCategories = masterCategories ?? [];
+  const subsOf = (name: string) => {
+    const parent = parentCategories.find((c) => c.name === name);
+    if (!parent) return [];
+    return allCategories.filter((c) => c.parentId === parent._id);
+  };
+  const [showManager, setShowManager] = useState(false);
 
   const [project, setProject] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
-  const [unit, setUnit] = useState("pcs");
+  const [unit, setUnit] = useState("");
+  const [category, setCategory] = useState("");
+  const [subCategory, setSubCategory] = useState("");
   const [note, setNote] = useState("");
   const [currency, setCurrency] = useState("$");
   const [markup, setMarkup] = useState("0");
@@ -107,6 +124,8 @@ export default function ProductForm({
         name: cleanName,
         code: code.trim() || undefined,
         unit: unit.trim() || undefined,
+        category: category.trim() || undefined,
+        subCategory: subCategory.trim() || undefined,
         note: note.trim() || undefined,
         currency: currency.trim() || "$",
         markupPct: markupNum,
@@ -115,6 +134,8 @@ export default function ProductForm({
       onSelectFg(id);
       setName("");
       setCode("");
+      setCategory("");
+      setSubCategory("");
       setNote("");
       setMarkup("0");
       setShowForm(false);
@@ -171,14 +192,33 @@ export default function ProductForm({
               <Package className="size-3.5" />
               New product (FG)
             </p>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setShowForm(false)}
-            >
-              Cancel
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowManager((v) => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Settings2 className="size-3.5" />
+                Manage units & categories
+              </button>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowForm(false)}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
+          {showManager && (
+            <div className="mb-3">
+              <MasterDataManager
+                units={units}
+                categories={allCategories}
+                onClose={() => setShowManager(false)}
+              />
+            </div>
+          )}
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <Input
               value={project}
@@ -207,13 +247,49 @@ export default function ProductForm({
               aria-label="Product code"
               className="h-9 rounded-lg text-sm"
             />
-            <Input
+            <select
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              placeholder="Sold per (unit)"
               aria-label="Sold per unit"
-              className="h-9 rounded-lg text-sm"
-            />
+              className="h-9 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">Sold per (unit)…</option>
+              {units.map((u) => (
+                <option key={u._id} value={u.name}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                setSubCategory("");
+              }}
+              aria-label="Category"
+              className="h-9 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">Category…</option>
+              {parentCategories.map((c) => (
+                <option key={c._id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={subCategory}
+              onChange={(e) => setSubCategory(e.target.value)}
+              aria-label="Sub-category"
+              disabled={!category || subsOf(category).length === 0}
+              className="h-9 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+            >
+              <option value="">Sub-category…</option>
+              {subsOf(category).map((c) => (
+                <option key={c._id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
             <Input
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
@@ -307,6 +383,7 @@ export default function ProductForm({
                 <th className="px-3 py-2 font-semibold">Product</th>
                 <th className="w-24 px-3 py-2 font-semibold">Code</th>
                 <th className="w-16 px-3 py-2 font-semibold">Unit</th>
+                <th className="w-28 px-3 py-2 font-semibold">Category</th>
                 <th className="w-16 px-3 py-2 text-right font-semibold">Markup</th>
                 <th className="w-24 px-3 py-2 text-right font-semibold">Cost</th>
                 <th className="w-28 px-3 py-2 text-right font-semibold">Total</th>
@@ -316,14 +393,14 @@ export default function ProductForm({
             <tbody className="divide-y divide-border/60">
               {allItems === undefined || finishedGoods === undefined ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-2 size-4 animate-spin" />
                     Loading products…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
                     {search || projectFilter !== "all"
                       ? "Nothing matches the current search/filter."
                       : "No products yet — create your first FG above."}
@@ -383,6 +460,10 @@ export default function ProductForm({
                         {f.code || "—"}
                       </td>
                       <td className="px-3 py-1.5 text-xs text-muted-foreground">{f.unit ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground">
+                        {f.category ? f.category : "—"}
+                        {f.subCategory ? ` › ${f.subCategory}` : ""}
+                      </td>
                       <td className="px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
                         {(f.markupPct ?? 0) > 0 ? `+${f.markupPct}%` : "—"}
                       </td>

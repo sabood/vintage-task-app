@@ -4,6 +4,138 @@ import { v } from "convex/values";
 
 const MAX_NAME_LENGTH = 120;
 
+// ── Units of measure (managed master data) ─────────────────────────────
+
+/** All units for the user, A→Z. */
+export const listUnits = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const units = await ctx.db
+      .query("costUnits")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return units.sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+/** Create a unit. */
+export const addUnit = mutation({
+  args: { name: v.string() },
+  handler: async (ctx, { name }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const clean = name.trim();
+    if (clean.length === 0) throw new Error("Give the unit a name.");
+    if (clean.length > 20) throw new Error("Unit names are 20 characters max.");
+    return await ctx.db.insert("costUnits", { ownerId: userId, name: clean });
+  },
+});
+
+/** Rename a unit. */
+export const renameUnit = mutation({
+  args: { id: v.id("costUnits"), name: v.string() },
+  handler: async (ctx, { id, name }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const unit = await ctx.db.get(id);
+    if (unit === null) throw new Error("That unit no longer exists.");
+    if (unit.ownerId !== userId) throw new Error("Not your unit.");
+    const clean = name.trim();
+    if (clean.length === 0) throw new Error("Give the unit a name.");
+    if (clean.length > 20) throw new Error("Unit names are 20 characters max.");
+    await ctx.db.patch(id, { name: clean });
+  },
+});
+
+/** Delete a unit (materials keep their copied value). */
+export const removeUnit = mutation({
+  args: { id: v.id("costUnits") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const unit = await ctx.db.get(id);
+    if (unit === null) throw new Error("That unit no longer exists.");
+    if (unit.ownerId !== userId) throw new Error("Not your unit.");
+    await ctx.db.delete(id);
+  },
+});
+
+// ── Categories & sub-categories (managed master data) ─────────────
+
+/** All categories (and sub-categories) for the user, A→Z. */
+export const listCategories = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const cats = await ctx.db
+      .query("costCategories")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return cats.sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+/** Create a category, or a sub-category when parentId is given. */
+export const addCategory = mutation({
+  args: { name: v.string(), parentId: v.optional(v.id("costCategories")) },
+  handler: async (ctx, { name, parentId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const clean = name.trim();
+    if (clean.length === 0) throw new Error("Give the category a name.");
+    if (clean.length > MAX_NAME_LENGTH) throw new Error("That name is too long.");
+    if (parentId !== undefined) {
+      const parent = await ctx.db.get(parentId);
+      if (parent === null || parent.ownerId !== userId)
+        throw new Error("That parent category no longer exists.");
+    }
+    return await ctx.db.insert("costCategories", {
+      ownerId: userId,
+      name: clean,
+      parentId,
+    });
+  },
+});
+
+/** Rename a category or sub-category. */
+export const renameCategory = mutation({
+  args: { id: v.id("costCategories"), name: v.string() },
+  handler: async (ctx, { id, name }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const cat = await ctx.db.get(id);
+    if (cat === null) throw new Error("That category no longer exists.");
+    if (cat.ownerId !== userId) throw new Error("Not your category.");
+    const clean = name.trim();
+    if (clean.length === 0) throw new Error("Give the category a name.");
+    if (clean.length > MAX_NAME_LENGTH) throw new Error("That name is too long.");
+    await ctx.db.patch(id, { name: clean });
+  },
+});
+
+/** Delete a category or sub-category. Deleting a parent also deletes its sub-categories. */
+export const removeCategory = mutation({
+  args: { id: v.id("costCategories") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const cat = await ctx.db.get(id);
+    if (cat === null) throw new Error("That category no longer exists.");
+    if (cat.ownerId !== userId) throw new Error("Not your category.");
+    const all = await ctx.db
+      .query("costCategories")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    // delete the category and any children (one level of sub-categories)
+    for (const c of all) {
+      if (c._id === id || c.parentId === id) await ctx.db.delete(c._id);
+    }
+  },
+});
+
 // ── Raw materials (master list used only for costing) ───────────────────
 
 /** All raw materials for the signed-in user, A→Z. */
@@ -26,10 +158,11 @@ export const addMaterial = mutation({
     code: v.optional(v.string()),
     name: v.string(),
     category: v.optional(v.string()),
+    subCategory: v.optional(v.string()),
     unit: v.string(),
     pricePerUnit: v.number(),
   },
-  handler: async (ctx, { code, name, category, unit, pricePerUnit }) => {
+  handler: async (ctx, { code, name, category, subCategory, unit, pricePerUnit }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
@@ -42,19 +175,21 @@ export const addMaterial = mutation({
       code: code?.trim() || undefined,
       name: clean,
       category: category?.trim() || undefined,
+      subCategory: subCategory?.trim() || undefined,
       unit: cleanUnit,
       pricePerUnit,
     });
   },
 });
 
-/** Edit a raw material (code, name, category, unit, or price). */
+/** Edit a raw material (code, name, category, sub-category, unit, or price). */
 export const updateMaterial = mutation({
   args: {
     id: v.id("rawMaterials"),
     code: v.optional(v.string()),
     name: v.optional(v.string()),
     category: v.optional(v.string()),
+    subCategory: v.optional(v.string()),
     unit: v.optional(v.string()),
     pricePerUnit: v.optional(v.number()),
   },
@@ -74,6 +209,8 @@ export const updateMaterial = mutation({
     if (patch.code !== undefined) patch.code = patch.code.trim() || undefined;
     if (patch.category !== undefined)
       patch.category = patch.category.trim() || undefined;
+    if (patch.subCategory !== undefined)
+      patch.subCategory = patch.subCategory.trim() || undefined;
     if (patch.pricePerUnit !== undefined && patch.pricePerUnit < 0)
       throw new Error("Price can't be negative.");
     await ctx.db.patch(id, patch);
@@ -206,15 +343,17 @@ export const addFinishedGood = mutation({
     name: v.string(),
     code: v.optional(v.string()),
     unit: v.optional(v.string()),
+    category: v.optional(v.string()),
+    subCategory: v.optional(v.string()),
     note: v.optional(v.string()),
     currency: v.optional(v.string()),
     markupPct: v.optional(v.number()),
   },
-  handler: async (ctx, { projectName, name, code, unit, note, currency, markupPct }) => {
+  handler: async (ctx, opts) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
-    const cleanProject = projectName.trim();
-    const cleanName = name.trim();
+    const cleanProject = opts.projectName.trim();
+    const cleanName = opts.name.trim();
     if (cleanProject.length === 0) throw new Error("Give the project a name.");
     if (cleanName.length === 0) throw new Error("Give the product a name.");
     if (cleanName.length > MAX_NAME_LENGTH) throw new Error("That name is too long.");
@@ -222,11 +361,13 @@ export const addFinishedGood = mutation({
       ownerId: userId,
       projectName: cleanProject.slice(0, MAX_NAME_LENGTH),
       name: cleanName.slice(0, MAX_NAME_LENGTH),
-      code: code?.trim() || undefined,
-      unit: unit?.trim() || undefined,
-      note: note?.trim() || undefined,
-      currency: currency?.trim().slice(0, 4) || "$",
-      markupPct: markupPct ?? 0,
+      code: opts.code?.trim() || undefined,
+      unit: opts.unit?.trim() || undefined,
+      category: opts.category?.trim() || undefined,
+      subCategory: opts.subCategory?.trim() || undefined,
+      note: opts.note?.trim() || undefined,
+      currency: opts.currency?.trim().slice(0, 4) || "$",
+      markupPct: opts.markupPct ?? 0,
     });
   },
 });
@@ -239,6 +380,8 @@ export const updateFinishedGood = mutation({
     name: v.optional(v.string()),
     code: v.optional(v.string()),
     unit: v.optional(v.string()),
+    category: v.optional(v.string()),
+    subCategory: v.optional(v.string()),
     note: v.optional(v.string()),
     currency: v.optional(v.string()),
     markupPct: v.optional(v.number()),
@@ -261,6 +404,10 @@ export const updateFinishedGood = mutation({
     }
     if (patch.code !== undefined) patch.code = patch.code.trim() || undefined;
     if (patch.unit !== undefined) patch.unit = patch.unit.trim() || undefined;
+    if (patch.category !== undefined)
+      patch.category = patch.category.trim() || undefined;
+    if (patch.subCategory !== undefined)
+      patch.subCategory = patch.subCategory.trim() || undefined;
     if (patch.note !== undefined) patch.note = patch.note.trim() || undefined;
     if (patch.markupPct !== undefined && patch.markupPct < 0)
       throw new Error("Markup can't be negative.");
