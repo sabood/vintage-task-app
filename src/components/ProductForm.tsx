@@ -14,7 +14,7 @@ import {
   Sigma,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -29,10 +29,12 @@ export default function ProductForm({
   finishedGoods,
   onSelectFg,
   activeFgId,
+  initialProject,
 }: {
   finishedGoods: FgDoc[];
   onSelectFg: (id: Id<"finishedGoods">) => void;
   activeFgId: Id<"finishedGoods"> | null;
+  initialProject?: string | null;
 }) {
   const removeFg = useMutation(api.costing.removeFinishedGood);
   const addFg = useMutation(api.costing.addFinishedGood);
@@ -64,6 +66,11 @@ export default function ProductForm({
   const [search, setSearch] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
+
+  // when arriving from the Projects tab, pre-filter to that project
+  useEffect(() => {
+    if (initialProject) setProjectFilter(initialProject);
+  }, [initialProject]);
 
   // product costs across all FGs (single query, grouped client-side)
   const allItems = useQuery(api.costing.listAllItems);

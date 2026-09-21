@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import MaterialsSheet from "@/components/MaterialsSheet";
 import ProductForm from "@/components/ProductForm";
+import ProjectsSheet from "@/components/ProjectsSheet";
 import type { CostingView } from "@/components/CostingSidebar";
 import {
   Download,
   FileSpreadsheet,
+  Folder,
   Layers,
   Loader2,
   Package,
@@ -56,6 +58,7 @@ export default function CostingPanel({
   onDeleteFg: (fg: FgDoc) => void;
   onEditFg: (fg: FgDoc) => void;
 }) {
+  const [projectFocus, setProjectFocus] = useState<string | null>(null);
   const addFgItem = useMutation(api.costing.addFgItem);
   const updateItem = useMutation(api.costing.updateItem);
   const removeItem = useMutation(api.costing.removeItem);
@@ -178,16 +181,29 @@ export default function CostingPanel({
         </button>
         <button
           type="button"
-          onClick={() => onSelectView(null)}
+          onClick={() => onSelectView({ kind: "products" })}
           className={cn(
             "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
-            view === null
+            view?.kind === "products" || view === null
               ? "border-primary/40 bg-primary/10 font-medium text-primary"
               : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
           <Package className="size-3.5" />
           Products
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectView({ kind: "projects" })}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+            view?.kind === "projects"
+              ? "border-primary/40 bg-primary/10 font-medium text-primary"
+              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <Folder className="size-3.5" />
+          Projects
         </button>
         {activeFg && (
           <span className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary">
@@ -210,6 +226,18 @@ export default function CostingPanel({
       {view?.kind === "materials" ? (
         <div className="mt-4">
           <MaterialsSheet materials={materials} loading={materials === undefined} />
+        </div>
+      ) : view?.kind === "projects" ? (
+        <div className="mt-4">
+          <ProjectsSheet
+            finishedGoods={finishedGoods}
+            loading={loading}
+            onOpenProject={(name) => {
+              setProjectFocus(name);
+              onSelectView({ kind: "products" });
+            }}
+            onNewProject={() => onNewFg("")}
+          />
         </div>
       ) : view?.kind === "fg" && activeFg ? (
         <>
@@ -508,6 +536,7 @@ export default function CostingPanel({
             finishedGoods={finishedGoods}
             activeFgId={view?.kind === "fg" ? view.fgId : null}
             onSelectFg={(id) => onSelectView({ kind: "fg", fgId: id })}
+            initialProject={view?.kind === "products" ? projectFocus : null}
           />
         </div>
       )}

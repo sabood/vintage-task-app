@@ -15,9 +15,11 @@ import { cn } from "@/lib/utils";
 type FgDoc = Doc<"finishedGoods">;
 type MaterialDoc = Doc<"rawMaterials">;
 
-/** What's open in the main area: the raw-material sheet or one FG product. */
+/** What's open in the main area: raw-materials, products, projects, or one FG product. */
 export type CostingView =
   | { kind: "materials" }
+  | { kind: "products" }
+  | { kind: "projects" }
   | { kind: "fg"; fgId: FgDoc["_id"] }
   | null;
 
