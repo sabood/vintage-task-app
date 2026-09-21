@@ -186,10 +186,18 @@ export const listFinishedGoods = query({
   },
 });
 
-/** Create an FG product under a project name. */
+/** Create an FG product under a project name, with optional details. */
 export const addFinishedGood = mutation({
-  args: { projectName: v.string(), name: v.string() },
-  handler: async (ctx, { projectName, name }) => {
+  args: {
+    projectName: v.string(),
+    name: v.string(),
+    code: v.optional(v.string()),
+    unit: v.optional(v.string()),
+    note: v.optional(v.string()),
+    currency: v.optional(v.string()),
+    markupPct: v.optional(v.number()),
+  },
+  handler: async (ctx, { projectName, name, code, unit, note, currency, markupPct }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const cleanProject = projectName.trim();
@@ -201,8 +209,11 @@ export const addFinishedGood = mutation({
       ownerId: userId,
       projectName: cleanProject.slice(0, MAX_NAME_LENGTH),
       name: cleanName.slice(0, MAX_NAME_LENGTH),
-      currency: "$",
-      markupPct: 0,
+      code: code?.trim() || undefined,
+      unit: unit?.trim() || undefined,
+      note: note?.trim() || undefined,
+      currency: currency?.trim().slice(0, 4) || "$",
+      markupPct: markupPct ?? 0,
     });
   },
 });
@@ -213,6 +224,9 @@ export const updateFinishedGood = mutation({
     id: v.id("finishedGoods"),
     projectName: v.optional(v.string()),
     name: v.optional(v.string()),
+    code: v.optional(v.string()),
+    unit: v.optional(v.string()),
+    note: v.optional(v.string()),
     currency: v.optional(v.string()),
     markupPct: v.optional(v.number()),
   },
@@ -232,6 +246,9 @@ export const updateFinishedGood = mutation({
       if (clean.length === 0) throw new Error("Give the product a name.");
       patch.name = clean.slice(0, MAX_NAME_LENGTH);
     }
+    if (patch.code !== undefined) patch.code = patch.code.trim() || undefined;
+    if (patch.unit !== undefined) patch.unit = patch.unit.trim() || undefined;
+    if (patch.note !== undefined) patch.note = patch.note.trim() || undefined;
     if (patch.markupPct !== undefined && patch.markupPct < 0)
       throw new Error("Markup can't be negative.");
     if (patch.currency !== undefined) patch.currency = patch.currency.trim().slice(0, 4) || "$";
@@ -258,6 +275,20 @@ export const removeFinishedGood = mutation({
 });
 
 // ── Sheet lines ─────────────────────────────────────────────────────────
+
+/** Every costing line for the user (for per-product totals across FGs). */
+export const listAllItems = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const items = await ctx.db
+      .query("costingItems")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return items.sort((a, b) => a._creationTime - b._creationTime);
+  },
+});
 
 /** Lines of one FG product, in creation order (rows of the grid). */
 export const listFgItems = query({
@@ -346,7 +377,7 @@ export const addFgItem = mutation({
     qty: v.number(),
     unitPrice: v.optional(v.number()),
   },
-  handler: async (ctx, { fgId, materialId, label, qty }) => {
+  handler: async (ctx, { fgId, materialId, label, qty, unitPrice }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(fgId);

@@ -2,9 +2,13 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import MaterialsSheet from "@/components/MaterialsSheet";
+import ProductForm from "@/components/ProductForm";
+import type { CostingView } from "@/components/CostingSidebar";
 import {
   Download,
   FileSpreadsheet,
+  Layers,
   Loader2,
   Package,
   Plus,
@@ -16,13 +20,13 @@ import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type SheetId = Id<"costingSheets">;
+type FgId = Id<"finishedGoods">;
+type FgDoc = Doc<"finishedGoods">;
 type MaterialDoc = Doc<"rawMaterials">;
 
 const cellCls =
   "w-full bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-primary/5 focus:ring-2 focus:ring-primary/30 rounded-md";
 
-/** Number formatting for the money columns. */
 function money(value: number, currency: string) {
   return `${currency}${value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -30,46 +34,50 @@ function money(value: number, currency: string) {
   })}`;
 }
 
-/** The Excel-like costing grid for one sheet. */
+/** Main costing area: raw-materials sheet, product form/list, or FG costing grid. */
 export default function CostingPanel({
   materials,
-  sheets,
+  finishedGoods,
   loading,
-  activeSheetId,
-  onSelectSheet,
-  onNewSheet,
-  onRenameSheet,
-  onDeleteSheet,
-  onAddMaterial,
+  view,
+  onSelectView,
+  onNewFg,
+  onRenameFg,
+  onDeleteFg,
+  onEditFg,
 }: {
   materials: MaterialDoc[];
-  sheets: Doc<"costingSheets">[];
+  finishedGoods: FgDoc[];
   loading: boolean;
-  activeSheetId: SheetId | null;
-  onSelectSheet: (id: SheetId | null) => void;
-  onNewSheet: () => void;
-  onRenameSheet: (sheet: Doc<"costingSheets">) => void;
-  onDeleteSheet: (sheet: Doc<"costingSheets">) => void;
-  onAddMaterial: () => void;
+  view: CostingView;
+  onSelectView: (view: CostingView) => void;
+  onNewFg: (projectName: string) => void;
+  onRenameFg: (fg: FgDoc) => void;
+  onDeleteFg: (fg: FgDoc) => void;
+  onEditFg: (fg: FgDoc) => void;
 }) {
-  const addItem = useMutation(api.costing.addItem);
+  const addFgItem = useMutation(api.costing.addFgItem);
   const updateItem = useMutation(api.costing.updateItem);
   const removeItem = useMutation(api.costing.removeItem);
-  const updateSheetM = useMutation(api.costing.updateSheet);
+  const updateFg = useMutation(api.costing.updateFinishedGood);
 
-  const [addingMaterialId, setAddingMaterialId] = useState<string>("");
+  // ── FG costing grid state ──────────────────────────────────────────
+  const [addingMaterialId, setAddingMaterialId] = useState("");
   const [materialQty, setMaterialQty] = useState("1");
   const [customLabel, setCustomLabel] = useState("");
   const [customQty, setCustomQty] = useState("1");
   const [customPrice, setCustomPrice] = useState("0");
 
-  const sheet = sheets.find((s) => s._id === activeSheetId) ?? sheets[0] ?? null;
-  const currency = sheet?.currency ?? "$";
-  const markupPct = sheet?.markupPct ?? 0;
+  const activeFg =
+    view?.kind === "fg"
+      ? (finishedGoods.find((f) => f._id === view.fgId) ?? null)
+      : null;
+  const currency = activeFg?.currency ?? "$";
+  const markupPct = activeFg?.markupPct ?? 0;
 
   const items = useQuery(
-    api.costing.listItems,
-    sheet ? { sheetId: sheet._id } : "skip",
+    api.costing.listFgItems,
+    view?.kind === "fg" ? { fgId: view.fgId } : "skip",
   );
   const rows = items ?? [];
 
@@ -80,15 +88,15 @@ export default function CostingPanel({
   }, [rows, markupPct]);
 
   const addMaterialRow = async () => {
-    if (!sheet || !addingMaterialId) return;
+    if (!activeFg || !addingMaterialId) return;
     const qty = Number(materialQty);
     if (!Number.isFinite(qty) || qty <= 0) {
       toast.error("Enter a quantity greater than zero.");
       return;
     }
     try {
-      await addItem({
-        sheetId: sheet._id,
+      await addFgItem({
+        fgId: activeFg._id,
         materialId: addingMaterialId as MaterialDoc["_id"],
         qty,
       });
@@ -100,7 +108,7 @@ export default function CostingPanel({
   };
 
   const addCustomRow = async () => {
-    if (!sheet) return;
+    if (!activeFg) return;
     const qty = Number(customQty);
     const price = Number(customPrice);
     if (!Number.isFinite(qty) || qty <= 0) {
@@ -112,14 +120,12 @@ export default function CostingPanel({
       return;
     }
     try {
-      const id = await addItem({
-        sheetId: sheet._id,
+      await addFgItem({
+        fgId: activeFg._id,
         label: customLabel.trim() || "Custom line",
         qty,
+        unitPrice: price,
       });
-      if (price > 0) {
-        await updateItem({ id, unitPrice: price });
-      }
       setCustomLabel("");
       setCustomQty("1");
       setCustomPrice("0");
@@ -129,7 +135,7 @@ export default function CostingPanel({
   };
 
   const exportCsv = () => {
-    if (!sheet) return;
+    if (!activeFg) return;
     const lines = [
       ["Description", "Qty", "Unit", "Unit price", "Amount"].join(","),
       ...rows.map((r) =>
@@ -141,85 +147,98 @@ export default function CostingPanel({
           (r.qty * r.unitPrice).toFixed(2),
         ].join(","),
       ),
-      `"Markup (${markupPct}%)",,,,"${(totals.markup).toFixed(2)}"`,
+      `"Markup (${markupPct}%)",,,,"${totals.markup.toFixed(2)}"`,
       `"TOTAL",,,,"${totals.grand.toFixed(2)}"`,
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${sheet.name.replace(/[^\w-]+/g, "_")}.csv`;
+    a.download = `${activeFg.name.replace(/[^\w-]+/g, "_")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div>
-      {/* ── Sheet tabs (like workbook tabs in Excel) ──────────────────── */}
+      {/* ── Tabs ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-        {sheets.map((s) => {
-          const active = sheet?._id === s._id;
-          return (
-            <div
-              key={s._id}
-              className={cn(
-                "group/tab flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm transition-colors",
-                active
-                  ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                  : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-              )}
-            >
-              <button type="button" onClick={() => onSelectSheet(s._id)}>
-                <FileSpreadsheet className="mr-1.5 inline size-3.5" />
-                {s.name}
-              </button>
-              <button
-                type="button"
-                aria-label={`Delete “${s.name}”`}
-                className="hidden text-muted-foreground hover:text-destructive group-hover/tab:inline"
-                onClick={() => onDeleteSheet(s)}
-              >
-                <Trash2 className="size-3" />
-              </button>
-            </div>
-          );
-        })}
         <button
           type="button"
-          onClick={onNewSheet}
-          className="flex items-center gap-1 rounded-lg border border-dashed px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => onSelectView({ kind: "materials" })}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+            view?.kind === "materials"
+              ? "border-primary/40 bg-primary/10 font-medium text-primary"
+              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
         >
-          <Plus className="size-3.5" />
-          New sheet
+          <Layers className="size-3.5" />
+          Raw materials
         </button>
-        {sheet && (
-          <button
-            type="button"
-            onClick={() => onRenameSheet(sheet)}
-            className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            Rename
-          </button>
+        <button
+          type="button"
+          onClick={() => onSelectView(null)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+            view === null
+              ? "border-primary/40 bg-primary/10 font-medium text-primary"
+              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <Package className="size-3.5" />
+          Products
+        </button>
+        {activeFg && (
+          <span className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary">
+            <FileSpreadsheet className="size-3.5" />
+            {activeFg.name}
+            <span className="text-xs font-normal text-primary/70">{activeFg.projectName}</span>
+            <button
+              type="button"
+              aria-label="Close product sheet"
+              className="text-primary/60 hover:text-primary"
+              onClick={() => onSelectView(null)}
+            >
+              ✕
+            </button>
+          </span>
         )}
       </div>
 
-      {/* ── Grid ──────────────────────────────────────────────────────── */}
-      {sheet === null ? (
-        <div className="mt-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
-          <div className="px-6 py-14 text-center">
-            <FileSpreadsheet className="mx-auto size-8 text-muted-foreground/40" />
-            <p className="mt-3 font-medium">No costing sheet yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create a sheet above, then add raw-material rows to cost a job.
-            </p>
-          </div>
+      {/* ── Views ────────────────────────────────────────────────────── */}
+      {view?.kind === "materials" ? (
+        <div className="mt-4">
+          <MaterialsSheet materials={materials} loading={materials === undefined} />
         </div>
-      ) : (
+      ) : view?.kind === "fg" && activeFg ? (
         <>
+          {/* product header */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-3 shadow-sm">
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-base font-semibold">{activeFg.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {activeFg.projectName}
+                {activeFg.code ? ` · ${activeFg.code}` : ""}
+                {activeFg.unit ? ` · per ${activeFg.unit}` : ""}
+              </p>
+              {activeFg.note && (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground/80">{activeFg.note}</p>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => onEditFg(activeFg)}
+            >
+              Edit details
+            </Button>
+          </div>
+
           {/* add-row bars */}
-          <div className="mt-4 grid gap-2 md:grid-cols-2">
-            {/* from raw materials */}
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
             <div className="rounded-xl border bg-card p-3 shadow-sm">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 <Package className="size-3.5" />
@@ -260,15 +279,14 @@ export default function CostingPanel({
               {materials.length === 0 && (
                 <button
                   type="button"
-                  onClick={onAddMaterial}
+                  onClick={() => onSelectView({ kind: "materials" })}
                   className="mt-1.5 text-xs text-primary hover:underline"
                 >
-                  + Add your first raw material (sidebar)
+                  + Add raw materials first (open the Raw materials tab)
                 </button>
               )}
             </div>
 
-            {/* custom line */}
             <div className="rounded-xl border bg-card p-3 shadow-sm">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 <Plus className="size-3.5" />
@@ -367,18 +385,15 @@ export default function CostingPanel({
                             step="any"
                             value={row.qty}
                             onChange={(e) =>
-                              void updateItem({
-                                id: row._id,
-                                qty: Number(e.target.value),
-                              }).catch(() => {})
+                              void updateItem({ id: row._id, qty: Number(e.target.value) }).catch(
+                                () => {},
+                              )
                             }
                             className={cn(cellCls, "text-right tabular-nums")}
                             aria-label="Quantity"
                           />
                         </td>
-                        <td className="px-3 py-1 text-xs text-muted-foreground">
-                          {row.unit ?? "—"}
-                        </td>
+                        <td className="px-3 py-1 text-xs text-muted-foreground">{row.unit ?? "—"}</td>
                         <td className="px-1 py-1">
                           <input
                             type="number"
@@ -436,8 +451,8 @@ export default function CostingPanel({
                             step="any"
                             value={markupPct}
                             onChange={(e) =>
-                              void updateSheetM({
-                                id: sheet._id,
+                              void updateFg({
+                                id: activeFg._id,
                                 markupPct: Number(e.target.value),
                               }).catch(() => {})
                             }
@@ -458,7 +473,10 @@ export default function CostingPanel({
                           Total
                         </span>
                       </td>
-                      <td colSpan={3} className="px-3 py-2.5 text-right font-display text-base font-bold tabular-nums text-primary">
+                      <td
+                        colSpan={3}
+                        className="px-3 py-2.5 text-right font-display text-base font-bold tabular-nums text-primary"
+                      >
                         {money(totals.grand, currency)}
                       </td>
                     </tr>
@@ -477,6 +495,19 @@ export default function CostingPanel({
             </div>
           )}
         </>
+      ) : loading ? (
+        <div className="mt-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Loading…
+        </div>
+      ) : (
+        <div className="mt-4">
+          <ProductForm
+            finishedGoods={finishedGoods}
+            activeFgId={view?.kind === "fg" ? view.fgId : null}
+            onSelectFg={(id) => onSelectView({ kind: "fg", fgId: id })}
+          />
+        </div>
       )}
     </div>
   );

@@ -143,6 +143,9 @@ const schema = defineSchema(
       ownerId: v.id("users"),
       projectName: v.string(), // group label shown in the sidebar
       name: v.string(), // FG product name, e.g. "Wooden chair"
+      code: v.optional(v.string()), // product code / SKU
+      unit: v.optional(v.string()), // sold per: pcs, box, set…
+      note: v.optional(v.string()), // short product description
       currency: v.optional(v.string()),
       markupPct: v.optional(v.number()),
     }).index("by_owner", ["ownerId"]),
