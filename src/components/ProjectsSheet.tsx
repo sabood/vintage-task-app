@@ -91,7 +91,7 @@ export default function ProjectsSheet({
 
   const exportCsv = () => {
     const lines = [
-      ["Code", "Project", "Products", "Cost", "Total (with markup)"].join(","),
+      ["Code", "Project", "Products", "Cost", "Sales Price (with margin)"].join(","),
       ...rows.map((p) =>
         [
           `"${(p.code ?? "").replace(/"/g, '""')}"`,
@@ -162,7 +162,7 @@ export default function ProjectsSheet({
                 <th className="px-3 py-2 font-semibold">Project</th>
                 <th className="w-24 px-3 py-2 text-right font-semibold">Products</th>
                 <th className="w-28 px-3 py-2 text-right font-semibold">Cost</th>
-                <th className="w-32 px-3 py-2 text-right font-semibold">Total</th>
+                <th className="w-32 px-3 py-2 text-right font-semibold">Sales price</th>
                 <th className="w-16 px-2 py-2" />
               </tr>
             </thead>

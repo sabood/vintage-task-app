@@ -699,7 +699,7 @@ export default function CostingPanel({
                     <tr className="bg-muted/30">
                       <td colSpan={4} className="px-3 py-2 text-right text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
-                          Markup
+                          Margin
                           <input
                             type="number"
                             min="0"
@@ -707,7 +707,7 @@ export default function CostingPanel({
                             value={draftMarkup ?? markupPct}
                             onChange={(e) => setDraftMarkup(Number(e.target.value))}
                             className="w-14 rounded border bg-card px-1.5 py-0.5 text-right text-xs tabular-nums outline-none focus:ring-2 focus:ring-primary/30"
-                            aria-label="Markup percent"
+                            aria-label="Margin percent"
                           />
                           %
                         </span>
@@ -720,7 +720,7 @@ export default function CostingPanel({
                       <td colSpan={4} className="px-3 py-2.5 text-right text-sm font-semibold">
                         <span className="inline-flex items-center gap-1.5">
                           <Sigma className="size-3.5 text-primary" />
-                          Total
+                          Sales price
                         </span>
                       </td>
                       <td

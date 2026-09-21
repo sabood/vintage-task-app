@@ -463,7 +463,7 @@ export default function Dashboard() {
         { key: "unit", label: "Sold per (unit)", initial: fg.unit ?? "pcs" },
         {
           key: "markup",
-          label: "Profit markup %",
+          label: "Margin % (sales price = cost + margin)",
           initial: String(fg.markupPct ?? 0),
           type: "number",
           validate: (v) =>

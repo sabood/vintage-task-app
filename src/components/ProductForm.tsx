@@ -173,7 +173,7 @@ export default function ProductForm({
 
   const exportCsv = () => {
     const lines = [
-      ["Project Code", "Project", "Product Code", "Product", "Unit", "Markup %", "Cost", "Total"].join(","),
+      ["Project Code", "Project", "Product Code", "Product", "Unit", "Margin %", "Cost", "Sales Price"].join(","),
       ...rows.map((f) => {
         const cost = costByFg.get(f._id) ?? 0;
         const total = cost * (1 + (f.markupPct ?? 0) / 100);
@@ -323,10 +323,33 @@ export default function ProductForm({
               step="any"
               value={markup}
               onChange={(e) => setMarkup(e.target.value)}
-              placeholder="Markup %"
-              aria-label="Markup percent"
+              placeholder="Margin %"
+              aria-label="Margin percent"
+              title="Sales price = Cost + Margin % — cost comes from the costing sheet"
               className="h-9 rounded-lg text-sm"
             />
+            <div>
+              <Input
+                disabled
+                value=""
+                placeholder="Cost (auto)"
+                aria-label="Cost — calculated automatically from the costing sheet"
+                title="Cost is calculated automatically from the product's costing sheet"
+                className="h-9 rounded-lg text-sm"
+              />
+              <p className="mt-0.5 text-[10px] text-muted-foreground/70">from costing sheet</p>
+            </div>
+            <div>
+              <Input
+                disabled
+                value=""
+                placeholder="Sales price (auto)"
+                aria-label="Sales price — cost plus margin, calculated automatically"
+                title="Sales price = Cost × (1 + Margin %), calculated automatically"
+                className="h-9 rounded-lg text-sm"
+              />
+              <p className="mt-0.5 text-[10px] text-muted-foreground/70">cost + margin %</p>
+            </div>
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -347,7 +370,7 @@ export default function ProductForm({
           className="flex w-full items-center gap-1.5 rounded-xl border border-dashed bg-card/60 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Plus className="size-3.5" />
-          New product (FG) — project, name, code, unit, markup…
+          New product (FG) — project, name, code, unit, margin…
         </button>
       )}
 
@@ -403,9 +426,9 @@ export default function ProductForm({
                 <th className="w-24 px-3 py-2 font-semibold">Code</th>
                 <th className="w-16 px-3 py-2 font-semibold">Unit</th>
                 <th className="w-28 px-3 py-2 font-semibold">Category</th>
-                <th className="w-16 px-3 py-2 text-right font-semibold">Markup</th>
+                <th className="w-16 px-3 py-2 text-right font-semibold">Margin %</th>
                 <th className="w-24 px-3 py-2 text-right font-semibold">Cost</th>
-                <th className="w-28 px-3 py-2 text-right font-semibold">Total</th>
+                <th className="w-28 px-3 py-2 text-right font-semibold">Sales price</th>
                 <th className="w-16 px-2 py-2" />
               </tr>
             </thead>
@@ -490,7 +513,7 @@ export default function ProductForm({
                         {f.currency ?? "$"}
                         {cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                      <td className="px-3 py-1.5 text-right font-medium tabular-nums text-primary">
                         {f.currency ?? "$"}
                         {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </td>
