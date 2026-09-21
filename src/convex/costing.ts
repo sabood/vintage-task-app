@@ -651,6 +651,22 @@ export const addFgItem = mutation({
       const material = await ctx.db.get(materialId);
       if (material === null || material.ownerId !== userId)
         throw new Error("That material no longer exists.");
+      // Merge duplicates: if this material is already on the sheet with the
+      // same unit price, just add to its quantity instead of a new row.
+      const existing = await ctx.db
+        .query("costingItems")
+        .withIndex("by_fg", (q) => q.eq("fgId", fgId))
+        .collect();
+      const twin = existing.find(
+        (it) =>
+          it.materialId === materialId &&
+          it.unitPrice === material.pricePerUnit &&
+          it.label === material.name,
+      );
+      if (twin) {
+        await ctx.db.patch(twin._id, { qty: twin.qty + qty });
+        return twin._id;
+      }
       return await ctx.db.insert("costingItems", {
         ownerId: userId,
         fgId,
@@ -710,5 +726,47 @@ export const removeItem = mutation({
     if (item === null) throw new Error("That line no longer exists.");
     if (item.ownerId !== userId) throw new Error("Not your line.");
     await ctx.db.delete(id);
+  },
+});
+
+/**
+ * Merge duplicate lines on a product sheet: rows with the same description,
+ * unit price, and unit collapse into one row with the combined quantity.
+ * Returns how many rows were removed. Safe to run repeatedly.
+ */
+export const mergeFgDuplicateItems = mutation({
+  args: { fgId: v.id("finishedGoods") },
+  handler: async (ctx, { fgId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const fg = await ctx.db.get(fgId);
+    if (fg === null || fg.ownerId !== userId)
+      throw new Error("That product no longer exists.");
+    const items = await ctx.db
+      .query("costingItems")
+      .withIndex("by_fg", (q) => q.eq("fgId", fgId))
+      .collect();
+    const groups = new Map<string, typeof items>();
+    for (const it of items) {
+      const key = `${it.label}::${it.unitPrice}::${it.unit ?? ""}`;
+      const list = groups.get(key) ?? [];
+      list.push(it);
+      groups.set(key, list);
+    }
+    let removed = 0;
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      // Keep a material-linked row when possible, else the oldest.
+      const keep = list.find((it) => it.materialId !== undefined) ?? list[0]!;
+      const totalQty = list.reduce((s, it) => s + it.qty, 0);
+      await ctx.db.patch(keep._id, { qty: totalQty });
+      for (const it of list) {
+        if (it._id !== keep._id) {
+          await ctx.db.delete(it._id);
+          removed += 1;
+        }
+      }
+    }
+    return removed;
   },
 });

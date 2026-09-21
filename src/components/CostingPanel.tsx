@@ -69,6 +69,8 @@ export default function CostingPanel({
   const updateFg = useMutation(api.costing.updateFinishedGood);
   const setFgImage = useMutation(api.costing.setFgImage);
   const clearFgImageM = useMutation(api.costing.clearFgImage);
+  const mergeDuplicates = useMutation(api.costing.mergeFgDuplicateItems);
+  const mergedOnceFor = useRef<Id<"finishedGoods"> | null>(null);
   const { confirm, promptMulti } = useAppDialogs();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -147,6 +149,25 @@ export default function CostingPanel({
     view?.kind === "fg" ? { fgId: view.fgId } : "skip",
   );
   const rows = items ?? [];
+
+  // Collapse duplicate rows (same description/price/unit) once per sheet open.
+  useEffect(() => {
+    if (!activeFg || items === undefined || items.length < 2) return;
+    if (mergedOnceFor.current === activeFg._id) return;
+    const hasDupes = new Set(items.map((i) => `${i.label}::${i.unitPrice}::${i.unit ?? ""}`)).size
+      !== items.length;
+    if (!hasDupes) {
+      mergedOnceFor.current = activeFg._id;
+      return;
+    }
+    mergedOnceFor.current = activeFg._id;
+    void mergeDuplicates({ fgId: activeFg._id })
+      .then((removed) => {
+        if (removed > 0) toast.success(`Merged ${removed} duplicate row${removed === 1 ? "" : "s"}.`);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, activeFg?._id]);
 
   const totals = useMemo(() => {
     const subtotal = rows.reduce((sum, r) => sum + r.qty * r.unitPrice, 0);
