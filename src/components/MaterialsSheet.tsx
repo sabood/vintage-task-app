@@ -7,6 +7,7 @@ import {
   Download,
   Loader2,
   Package,
+  Pencil,
   Plus,
   Search as SearchIcon,
   Settings2,
@@ -15,6 +16,7 @@ import {
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
+import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 
 type MaterialDoc = Doc<"rawMaterials">;
@@ -46,6 +48,80 @@ export default function MaterialsSheet({
     return allCategories.filter((c) => c.parentId === parent._id);
   };
   const [showManager, setShowManager] = useState(false);
+  const { promptMulti, confirm } = useAppDialogs();
+
+  /** Open the styled edit dialog for one material row. */
+  const handleEdit = async (m: MaterialDoc) => {
+    const result = await promptMulti({
+      title: `Edit “${m.name}”`,
+      message: "Update the raw material details.",
+      columns: 2,
+      confirmLabel: "Save changes",
+      fields: [
+        { key: "code", label: "Code", initial: m.code ?? "", placeholder: "RM0001" },
+        { key: "name", label: "Material name", initial: m.name, required: true },
+        {
+          key: "category",
+          label: "Category",
+          initial: m.category ?? "",
+          placeholder: "e.g. Wood",
+        },
+        {
+          key: "subCategory",
+          label: "Sub-category",
+          initial: m.subCategory ?? "",
+          placeholder: "e.g. Hardwood",
+        },
+        { key: "unit", label: "Unit", initial: m.unit, required: true, placeholder: "pcs" },
+        {
+          key: "price",
+          label: "Unit price",
+          initial: String(m.pricePerUnit),
+          type: "number",
+          required: true,
+          validate: (v) =>
+            v && (Number.isNaN(Number(v)) || Number(v) < 0) ? "Enter a valid price." : null,
+        },
+      ],
+    });
+    if (result === null) return;
+    const priceNum = Number(result.price);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      toast.error("Enter a valid price per unit.");
+      return;
+    }
+    try {
+      await updateMaterial({
+        id: m._id,
+        code: result.code,
+        name: result.name,
+        category: result.category,
+        subCategory: result.subCategory,
+        unit: result.unit,
+        pricePerUnit: priceNum,
+      });
+      toast.success("Material updated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't update the material.");
+    }
+  };
+
+  const handleDelete = async (m: MaterialDoc) => {
+    const ok = await confirm({
+      title: `Delete “${m.name}”?`,
+      message:
+        "The material is removed from the master list. Existing costing lines keep their copied values.",
+      confirmLabel: "Delete material",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await removeMaterial({ id: m._id });
+      toast.success("Material deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete the material.");
+    }
+  };
 
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -316,114 +392,34 @@ export default function MaterialsSheet({
               ) : (
                 rows.map((m, i) => (
                   <tr key={m._id} className="group/row transition-colors hover:bg-accent/40">
-                    <td className="px-3 py-1 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={m.code ?? ""}
-                        onChange={(e) =>
-                          void updateMaterial({ id: m._id, code: e.target.value }).catch(() => {})
-                        }
-                        className={cn(cellCls, "font-mono text-xs")}
-                        aria-label="Material code"
-                        placeholder="—"
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        value={m.name}
-                        onChange={(e) =>
-                          void updateMaterial({ id: m._id, name: e.target.value }).catch(
-                            () => toast.error("Couldn't rename the material."),
-                          )
-                        }
-                        className={cellCls}
-                        aria-label="Material name"
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <select
-                        value={m.category ?? ""}
-                        onChange={(e) =>
-                          void updateMaterial({ id: m._id, category: e.target.value }).catch(() => {})
-                        }
-                        className={cn(cellCls, "cursor-pointer")}
-                        aria-label="Category"
-                      >
-                        <option value="">—</option>
-                        {parentCategories.map((c) => (
-                          <option key={c._id} value={c.name}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-1 py-1">
-                      <select
-                        value={m.subCategory ?? ""}
-                        onChange={(e) =>
-                          void updateMaterial({ id: m._id, subCategory: e.target.value }).catch(
-                            () => {},
-                          )
-                        }
-                        className={cn(cellCls, "cursor-pointer")}
-                        aria-label="Sub-category"
-                      >
-                        <option value="">—</option>
-                        {subsOf(m.category ?? "").map((c) => (
-                          <option key={c._id} value={c.name}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-1 py-1">
-                      <select
-                        value={units.some((u) => u.name === m.unit) ? m.unit : ""}
-                        onChange={(e) =>
-                          void updateMaterial({ id: m._id, unit: e.target.value }).catch(() => {})
-                        }
-                        className={cn(cellCls, "cursor-pointer")}
-                        aria-label="Unit"
-                      >
-                        {units.some((u) => u.name === m.unit) ? null : (
-                          <option value="">{m.unit}</option>
-                        )}
-                        {units.map((u) => (
-                          <option key={u._id} value={u.name}>
-                            {u.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={m.pricePerUnit}
-                        onChange={(e) =>
-                          void updateMaterial({
-                            id: m._id,
-                            pricePerUnit: Number(e.target.value),
-                          }).catch(() => {})
-                        }
-                        className={cn(cellCls, "text-right tabular-nums")}
-                        aria-label="Price per unit"
-                      />
-                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{m.code ?? "—"}</td>
+                    <td className="px-3 py-2 font-medium">{m.name}</td>
+                    <td className="px-3 py-2 text-sm text-muted-foreground">{m.category ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-muted-foreground">{m.subCategory ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-muted-foreground">{m.unit}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.pricePerUnit.toLocaleString()}</td>
                     <td className="px-2 py-1 text-center">
-                      <button
-                        type="button"
-                        aria-label={`Delete ${m.name}`}
-                        className="hidden text-muted-foreground hover:text-destructive group-hover/row:inline"
-                        onClick={() =>
-                          void removeMaterial({ id: m._id }).catch(() =>
-                            toast.error("Couldn't delete the material."),
-                          )
-                        }
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      <span className="hidden gap-0.5 group-hover/row:inline-flex">
+                        <button
+                          type="button"
+                          aria-label={`Edit ${m.name}`}
+                          title="Edit material"
+                          className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
+                          onClick={() => void handleEdit(m)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${m.name}`}
+                          title="Delete material"
+                          className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive"
+                          onClick={() => void handleDelete(m)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </span>
                     </td>
                   </tr>
                 ))
