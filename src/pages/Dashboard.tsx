@@ -380,7 +380,22 @@ export default function Dashboard() {
 
   const handleNewFg = async (projectName: string) => {
     const cleanProject = projectName.trim();
-    if (!cleanProject) return;
+    if (!cleanProject || cleanProject === "new") {
+      // Opened from the Projects tab: ask for the project AND product together.
+      const result = await promptMulti({
+        title: "New project & product",
+        message: "Codes are assigned automatically — PR for the project, FG for the product.",
+        columns: 2,
+        confirmLabel: "Create",
+        fields: [
+          { key: "project", label: "Project name", placeholder: "e.g. Office renovation", required: true },
+          { key: "name", label: "Product name (FG)", placeholder: "e.g. Wooden chair", required: true },
+        ],
+      });
+      if (result === null) return;
+      await createFg(result.project.trim(), result.name.trim());
+      return;
+    }
     const name = await prompt({
       title: `New product under “${cleanProject}”`,
       label: "Product name",
@@ -390,7 +405,14 @@ export default function Dashboard() {
       confirmLabel: "Create",
     });
     if (name === null) return;
-    const cleanName = name.trim();
+    await createFg(cleanProject, name.trim());
+  };
+
+  const createFg = async (cleanProject: string, cleanName: string) => {
+    if (!cleanProject) {
+      toast.error("Give the project a name.");
+      return;
+    }
     if (!cleanName) {
       toast.error("Give the product a name.");
       return;

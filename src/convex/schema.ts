@@ -145,8 +145,9 @@ const schema = defineSchema(
     finishedGoods: defineTable({
       ownerId: v.id("users"),
       projectName: v.string(), // group label shown in the sidebar
+      projectCode: v.optional(v.string()), // auto code for the project, e.g. PR0001
       name: v.string(), // FG product name, e.g. "Wooden chair"
-      code: v.optional(v.string()), // product code / SKU
+      code: v.optional(v.string()), // product code / SKU, auto e.g. FG0001
       unit: v.optional(v.string()), // sold per: pcs, box, set…
       category: v.optional(v.string()), // managed master value
       subCategory: v.optional(v.string()), // managed master value

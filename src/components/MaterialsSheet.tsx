@@ -170,9 +170,10 @@ export default function MaterialsSheet({
           <Input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Code, e.g. RM-001"
-            aria-label="Material code"
-            className="h-9 w-28 rounded-lg text-sm"
+            placeholder="Auto code (RM0001)"
+            aria-label="Material code — leave blank to auto-generate"
+            title="Leave blank to auto-generate the next RM code"
+            className="h-9 w-32 rounded-lg text-sm"
           />
           <Input
             value={name}

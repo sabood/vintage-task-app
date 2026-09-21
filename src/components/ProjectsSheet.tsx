@@ -20,6 +20,7 @@ type FgDoc = Doc<"finishedGoods">;
 
 type ProjectRow = {
   name: string;
+  code?: string; // PR#### auto code
   products: number;
   cost: number;
   total: number;
@@ -56,6 +57,7 @@ export default function ProjectsSheet({
     for (const fg of finishedGoods) {
       const row = map.get(fg.projectName) ?? {
         name: fg.projectName,
+        code: fg.projectCode,
         products: 0,
         cost: 0,
         total: 0,
@@ -89,16 +91,17 @@ export default function ProjectsSheet({
 
   const exportCsv = () => {
     const lines = [
-      ["Project", "Products", "Cost", "Total (with markup)"].join(","),
+      ["Code", "Project", "Products", "Cost", "Total (with markup)"].join(","),
       ...rows.map((p) =>
         [
+          `"${(p.code ?? "").replace(/"/g, '""')}"`,
           `"${p.name.replace(/"/g, '""')}"`,
           String(p.products),
           p.cost.toFixed(2),
           p.total.toFixed(2),
         ].join(","),
       ),
-      `"TOTAL",${totals.products},${totals.cost.toFixed(2)},${totals.total.toFixed(2)}`,
+      `"",TOTAL,${totals.products},${totals.cost.toFixed(2)},${totals.total.toFixed(2)}`,
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -155,6 +158,7 @@ export default function ProjectsSheet({
             <thead>
               <tr className="border-b border-border/70 bg-muted/40 text-left text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
                 <th className="w-10 px-3 py-2 font-semibold">#</th>
+                <th className="w-20 px-3 py-2 font-semibold">Code</th>
                 <th className="px-3 py-2 font-semibold">Project</th>
                 <th className="w-24 px-3 py-2 text-right font-semibold">Products</th>
                 <th className="w-28 px-3 py-2 text-right font-semibold">Cost</th>
@@ -165,14 +169,14 @@ export default function ProjectsSheet({
             <tbody className="divide-y divide-border/60">
               {loading || allItems === undefined ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-2 size-4 animate-spin" />
                     Loading projects…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     {search
                       ? `Nothing matches “${search}”.`
                       : "No projects yet — create one above, or add a product under a new project."}
@@ -182,6 +186,7 @@ export default function ProjectsSheet({
                 rows.map((p, i) => (
                   <tr key={p.name} className="group/row transition-colors hover:bg-accent/40">
                     <td className="px-3 py-1 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
+                    <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{p.code ?? "—"}</td>
                     <td className="px-3 py-1.5">
                       <button
                         type="button"
@@ -233,7 +238,7 @@ export default function ProjectsSheet({
             {rows.length > 0 && (
               <tfoot>
                 <tr className="border-t border-border/70 bg-primary/5">
-                  <td colSpan={3} className="px-3 py-2 text-right text-sm font-semibold">
+                  <td colSpan={4} className="px-3 py-2 text-right text-sm font-semibold">
                     All projects
                   </td>
                   <td className="px-3 py-2 text-right text-xs font-medium tabular-nums text-muted-foreground">

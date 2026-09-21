@@ -236,7 +236,7 @@ export default function CostingPanel({
               setProjectFocus(name);
               onSelectView({ kind: "products" });
             }}
-            onNewProject={() => onNewFg("")}
+            onNewProject={() => onNewFg("new")}
           />
         </div>
       ) : view?.kind === "fg" && activeFg ? (

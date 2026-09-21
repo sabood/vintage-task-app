@@ -147,6 +147,11 @@ export default function CostingSidebar({
               <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 {projectName}
               </span>
+              {fgs[0]?.projectCode && (
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
+                  {fgs[0].projectCode}
+                </span>
+              )}
               <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums text-muted-foreground">
                 {fgs.length}
               </span>
@@ -183,6 +188,11 @@ export default function CostingSidebar({
                         >
                           {fg.name}
                         </span>
+                        {fg.code && (
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
+                            {fg.code}
+                          </span>
+                        )}
                       </button>
                       <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within/fg:opacity-100 group-hover/fg:opacity-100">
                         <button

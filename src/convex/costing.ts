@@ -1,8 +1,46 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 const MAX_NAME_LENGTH = 120;
+
+/**
+ * Generate the next sequential code for a prefix, e.g. "RM" → "RM0007".
+ * Scans existing entities (owner-scoped) and returns max+1, so existing
+ * codes never change; numbering continues after the highest used number.
+ */
+async function nextCode(
+  ctx: MutationCtx,
+  ownerId: Id<"users">,
+  prefix: "RM" | "FG" | "PR",
+): Promise<string> {
+  let max = 0;
+  const scan = (code: unknown) => {
+    if (typeof code !== "string" || !code.startsWith(prefix)) return;
+    const n = Number.parseInt(code.slice(prefix.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  };
+  if (prefix === "RM") {
+    const materials = await ctx.db
+      .query("rawMaterials")
+      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .collect();
+    for (const m of materials) scan(m.code);
+  } else {
+    const fgs = await ctx.db
+      .query("finishedGoods")
+      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .collect();
+    if (prefix === "FG") {
+      for (const fg of fgs) scan(fg.code);
+    } else {
+      for (const fg of fgs) scan(fg.projectCode);
+    }
+  }
+  return `${prefix}${String(max + 1).padStart(4, "0")}`;
+}
 
 // ── Units of measure (managed master data) ─────────────────────────────
 
@@ -170,9 +208,11 @@ export const addMaterial = mutation({
     if (clean.length > MAX_NAME_LENGTH) throw new Error("That name is too long.");
     const cleanUnit = unit.trim() || "pcs";
     if (pricePerUnit < 0) throw new Error("Price can't be negative.");
+    // Auto-code: RM0001, RM0002, … unless the user typed their own code.
+    const autoCode = await nextCode(ctx, userId, "RM");
     return await ctx.db.insert("rawMaterials", {
       ownerId: userId,
-      code: code?.trim() || undefined,
+      code: code?.trim() || autoCode,
       name: clean,
       category: category?.trim() || undefined,
       subCategory: subCategory?.trim() || undefined,
@@ -357,11 +397,25 @@ export const addFinishedGood = mutation({
     if (cleanProject.length === 0) throw new Error("Give the project a name.");
     if (cleanName.length === 0) throw new Error("Give the product a name.");
     if (cleanName.length > MAX_NAME_LENGTH) throw new Error("That name is too long.");
+    // Auto codes: FG0001 for the product; PR0001 shared per project name.
+    const fgCode = await nextCode(ctx, userId, "FG");
+    let projectCode: string | undefined;
+    const siblings = await ctx.db
+      .query("finishedGoods")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    const existing = siblings.find((s) => s.projectName === cleanProject);
+    if (existing?.projectCode) {
+      projectCode = existing.projectCode;
+    } else {
+      projectCode = await nextCode(ctx, userId, "PR");
+    }
     return await ctx.db.insert("finishedGoods", {
       ownerId: userId,
       projectName: cleanProject.slice(0, MAX_NAME_LENGTH),
+      projectCode,
       name: cleanName.slice(0, MAX_NAME_LENGTH),
-      code: opts.code?.trim() || undefined,
+      code: opts.code?.trim() || fgCode,
       unit: opts.unit?.trim() || undefined,
       category: opts.category?.trim() || undefined,
       subCategory: opts.subCategory?.trim() || undefined,
@@ -377,6 +431,7 @@ export const updateFinishedGood = mutation({
   args: {
     id: v.id("finishedGoods"),
     projectName: v.optional(v.string()),
+    projectCode: v.optional(v.string()), // usually auto-assigned on project change
     name: v.optional(v.string()),
     code: v.optional(v.string()),
     unit: v.optional(v.string()),
@@ -396,6 +451,17 @@ export const updateFinishedGood = mutation({
       const clean = patch.projectName.trim();
       if (clean.length === 0) throw new Error("Give the project a name.");
       patch.projectName = clean.slice(0, MAX_NAME_LENGTH);
+      // Moving the product to another project: inherit that project's PR code,
+      // or mint a fresh one if this is the first product under the new name.
+      const target = patch.projectName;
+      if (target !== fg.projectName) {
+        const siblings = await ctx.db
+          .query("finishedGoods")
+          .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+          .collect();
+        const existing = siblings.find((s) => s.projectName === target && s._id !== id);
+        patch.projectCode = existing?.projectCode ?? (await nextCode(ctx, userId, "PR"));
+      }
     }
     if (patch.name !== undefined) {
       const clean = patch.name.trim();

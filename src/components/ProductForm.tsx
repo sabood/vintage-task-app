@@ -173,14 +173,15 @@ export default function ProductForm({
 
   const exportCsv = () => {
     const lines = [
-      ["Project", "Product", "Code", "Unit", "Markup %", "Cost", "Total"].join(","),
+      ["Project Code", "Project", "Product Code", "Product", "Unit", "Markup %", "Cost", "Total"].join(","),
       ...rows.map((f) => {
         const cost = costByFg.get(f._id) ?? 0;
         const total = cost * (1 + (f.markupPct ?? 0) / 100);
         return [
+          `"${(f.projectCode ?? "").replace(/"/g, '""')}"`,
           `"${f.projectName.replace(/"/g, '""')}"`,
-          `"${f.name.replace(/"/g, '""')}"`,
           `"${(f.code ?? "").replace(/"/g, '""')}"`,
+          `"${f.name.replace(/"/g, '""')}"`,
           f.unit ?? "",
           String(f.markupPct ?? 0),
           cost.toFixed(2),
@@ -261,7 +262,7 @@ export default function ProductForm({
             <Input
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="Code / SKU"
+              placeholder="Auto code (FG0001)"
               aria-label="Product code"
               className="h-9 rounded-lg text-sm"
             />
