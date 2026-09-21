@@ -8,8 +8,8 @@ import NotesPanel from "@/components/NotesPanel";
 import TasksPanel from "@/components/TasksPanel";
 import { format } from "date-fns";
 import { Check, CheckSquare, LogOut, NotebookPen } from "lucide-react";
-import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ export default function Dashboard() {
   const renameNotebook = useMutation(api.notebooks.renameNotebook);
   const removeNotebook = useMutation(api.notebooks.removeNotebook);
   const addPage = useMutation(api.notebooks.addPage);
+  const ensureDefaultWorkbook = useMutation(api.notebooks.ensureDefaultWorkbook);
   const updatePageRemote = useMutation(api.notebooks.updatePage);
   const removePage = useMutation(api.notebooks.removePage);
   const addTask = useMutation(api.tasks.add);
@@ -60,6 +61,22 @@ export default function Dashboard() {
     notebookId ? { notebookId } : "skip",
   );
   const allPages = useQuery(api.notebooks.listAllPages);
+
+  // ── First-run seeding: "My Workbook" + an untitled page ────────────
+  const seededOnce = useRef(false);
+  useEffect(() => {
+    if (notebooks === undefined) return; // still loading
+    if (seededOnce.current) return; // only try once per session
+    seededOnce.current = true;
+    if (notebooks.length === 0) {
+      ensureDefaultWorkbook().catch(() => {
+        // If it failed (e.g. racing another tab), the query will refresh;
+        // only retry if the list is still empty on next mount.
+        seededOnce.current = false;
+      });
+    }
+  }, [notebooks, ensureDefaultWorkbook]);
+
   const pageList = pages ?? [];
   const activePage =
     pageList.find((p) => p._id === activePageId) ?? pageList[0] ?? null;

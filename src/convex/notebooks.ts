@@ -53,6 +53,41 @@ export const listNotebooks = query({
   },
 });
 
+/**
+ * First-run seeding: when the user opens Notes and has no notebooks yet,
+ * create "My Workbook" with one "Untitled page". Idempotent — returns the
+ * new notebook id (or null if notebooks already exist).
+ */
+export const ensureDefaultWorkbook = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const existing = await ctx.db
+      .query("notebooks")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    if (existing.length > 0) return null;
+    const notebookId = await ctx.db.insert("notebooks", {
+      ownerId: userId,
+      title: "My Workbook",
+      color: "default",
+    });
+    await ctx.db.insert("notePages", {
+      ownerId: userId,
+      notebookId,
+      title: "Untitled page",
+      body: "",
+      numbered: false,
+      font: "sans",
+      color: "default",
+      inkColor: "default",
+      order: 1,
+    });
+    return notebookId;
+  },
+});
+
 /** Create a notebook. */
 export const addNotebook = mutation({
   args: { title: v.string() },
