@@ -170,9 +170,112 @@ export const removeSheet = mutation({
   },
 });
 
+// ── Finished goods (FG products grouped by project) ───────────────────
+
+/** All FG products for the user, newest first. */
+export const listFinishedGoods = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const fgs = await ctx.db
+      .query("finishedGoods")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return fgs.sort((a, b) => b._creationTime - a._creationTime);
+  },
+});
+
+/** Create an FG product under a project name. */
+export const addFinishedGood = mutation({
+  args: { projectName: v.string(), name: v.string() },
+  handler: async (ctx, { projectName, name }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const cleanProject = projectName.trim();
+    const cleanName = name.trim();
+    if (cleanProject.length === 0) throw new Error("Give the project a name.");
+    if (cleanName.length === 0) throw new Error("Give the product a name.");
+    if (cleanName.length > MAX_NAME_LENGTH) throw new Error("That name is too long.");
+    return await ctx.db.insert("finishedGoods", {
+      ownerId: userId,
+      projectName: cleanProject.slice(0, MAX_NAME_LENGTH),
+      name: cleanName.slice(0, MAX_NAME_LENGTH),
+      currency: "$",
+      markupPct: 0,
+    });
+  },
+});
+
+/** Rename an FG product or change its project group. */
+export const updateFinishedGood = mutation({
+  args: {
+    id: v.id("finishedGoods"),
+    projectName: v.optional(v.string()),
+    name: v.optional(v.string()),
+    currency: v.optional(v.string()),
+    markupPct: v.optional(v.number()),
+  },
+  handler: async (ctx, { id, ...patch }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const fg = await ctx.db.get(id);
+    if (fg === null) throw new Error("That product no longer exists.");
+    if (fg.ownerId !== userId) throw new Error("Not your product.");
+    if (patch.projectName !== undefined) {
+      const clean = patch.projectName.trim();
+      if (clean.length === 0) throw new Error("Give the project a name.");
+      patch.projectName = clean.slice(0, MAX_NAME_LENGTH);
+    }
+    if (patch.name !== undefined) {
+      const clean = patch.name.trim();
+      if (clean.length === 0) throw new Error("Give the product a name.");
+      patch.name = clean.slice(0, MAX_NAME_LENGTH);
+    }
+    if (patch.markupPct !== undefined && patch.markupPct < 0)
+      throw new Error("Markup can't be negative.");
+    if (patch.currency !== undefined) patch.currency = patch.currency.trim().slice(0, 4) || "$";
+    await ctx.db.patch(id, patch);
+  },
+});
+
+/** Delete an FG product and all its costing lines. */
+export const removeFinishedGood = mutation({
+  args: { id: v.id("finishedGoods") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const fg = await ctx.db.get(id);
+    if (fg === null) throw new Error("That product no longer exists.");
+    if (fg.ownerId !== userId) throw new Error("Not your product.");
+    const items = await ctx.db
+      .query("costingItems")
+      .withIndex("by_fg", (q) => q.eq("fgId", id))
+      .collect();
+    for (const item of items) await ctx.db.delete(item._id);
+    await ctx.db.delete(id);
+  },
+});
+
 // ── Sheet lines ─────────────────────────────────────────────────────────
 
-/** Lines of one sheet, in creation order (rows of the grid). */
+/** Lines of one FG product, in creation order (rows of the grid). */
+export const listFgItems = query({
+  args: { fgId: v.id("finishedGoods") },
+  handler: async (ctx, { fgId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const fg = await ctx.db.get(fgId);
+    if (fg === null || fg.ownerId !== userId) return [];
+    const items = await ctx.db
+      .query("costingItems")
+      .withIndex("by_fg", (q) => q.eq("fgId", fgId))
+      .collect();
+    return items.sort((a, b) => a._creationTime - b._creationTime);
+  },
+});
+
+/** Lines of one legacy sheet, in creation order. */
 export const listItems = query({
   args: { sheetId: v.id("costingSheets") },
   handler: async (ctx, { sheetId }) => {
@@ -188,10 +291,7 @@ export const listItems = query({
   },
 });
 
-/**
- * Add a line. For a raw-material row, pass materialId and qty —
- * the name/unit/price are copied from the master list (costing only).
- */
+/** Legacy: add a line to a sheet (pre-FG flow). Kept while the UI migrates. */
 export const addItem = mutation({
   args: {
     sheetId: v.id("costingSheets"),
@@ -230,6 +330,53 @@ export const addItem = mutation({
       label: clean.slice(0, MAX_NAME_LENGTH),
       qty,
       unitPrice: 0,
+    });
+  },
+});
+
+/**
+ * Add a line to an FG product. For a raw-material row, pass materialId and
+ * qty — name/unit/price are copied from the master list (costing only).
+ */
+export const addFgItem = mutation({
+  args: {
+    fgId: v.id("finishedGoods"),
+    materialId: v.optional(v.id("rawMaterials")),
+    label: v.optional(v.string()),
+    qty: v.number(),
+    unitPrice: v.optional(v.number()),
+  },
+  handler: async (ctx, { fgId, materialId, label, qty }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const fg = await ctx.db.get(fgId);
+    if (fg === null || fg.ownerId !== userId)
+      throw new Error("That product no longer exists.");
+    if (qty <= 0) throw new Error("Quantity must be greater than zero.");
+
+    if (materialId !== undefined) {
+      const material = await ctx.db.get(materialId);
+      if (material === null || material.ownerId !== userId)
+        throw new Error("That material no longer exists.");
+      return await ctx.db.insert("costingItems", {
+        ownerId: userId,
+        fgId,
+        materialId,
+        label: material.name,
+        qty,
+        unitPrice: material.pricePerUnit,
+        unit: material.unit,
+      });
+    }
+
+    const clean = label?.trim();
+    if (!clean) throw new Error("Give the line a description.");
+    return await ctx.db.insert("costingItems", {
+      ownerId: userId,
+      fgId,
+      label: clean.slice(0, MAX_NAME_LENGTH),
+      qty,
+      unitPrice: unitPrice ?? 0,
     });
   },
 });

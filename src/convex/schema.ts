@@ -138,10 +138,20 @@ const schema = defineSchema(
       markupPct: v.optional(v.number()), // profit % applied on cost
     }).index("by_owner", ["ownerId"]),
 
+    // finished goods (FG) — the product being costed, grouped by project
+    finishedGoods: defineTable({
+      ownerId: v.id("users"),
+      projectName: v.string(), // group label shown in the sidebar
+      name: v.string(), // FG product name, e.g. "Wooden chair"
+      currency: v.optional(v.string()),
+      markupPct: v.optional(v.number()),
+    }).index("by_owner", ["ownerId"]),
+
     // one line inside a costing sheet
     costingItems: defineTable({
       ownerId: v.id("users"),
-      sheetId: v.id("costingSheets"),
+      sheetId: v.optional(v.id("costingSheets")), // legacy sheets
+      fgId: v.optional(v.id("finishedGoods")), // lines of an FG product
       materialId: v.optional(v.id("rawMaterials")), // set for raw-material lines
       label: v.string(), // material name or custom line label
       qty: v.number(),
@@ -149,6 +159,7 @@ const schema = defineSchema(
       unit: v.optional(v.string()),
     })
       .index("by_sheet", ["sheetId"])
+      .index("by_fg", ["fgId"])
       .index("by_owner", ["ownerId"]),
 
     // notebooks: the top level of the notes workspace (OneNote-style)
