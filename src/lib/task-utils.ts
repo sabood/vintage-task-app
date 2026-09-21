@@ -1,0 +1,115 @@
+import type { Doc } from "@/convex/_generated/dataModel";
+
+export type TaskDoc = Doc<"tasks">;
+export type StepDoc = Doc<"taskSteps">;
+export type Priority = "high" | "medium" | "low";
+export type Recurrence = "daily" | "weekly" | "monthly";
+
+export const PRIORITIES: { value: Priority; label: string; dot: string; chip: string }[] = [
+  { value: "high", label: "High", dot: "bg-rose-500", chip: "bg-rose-500/10 text-rose-700 dark:text-rose-400" },
+  { value: "medium", label: "Medium", dot: "bg-amber-500", chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  { value: "low", label: "Low", dot: "bg-sky-500", chip: "bg-sky-500/10 text-sky-700 dark:text-sky-400" },
+];
+
+export const RECURRENCE_LABEL: Record<Recurrence, string> = {
+  daily: "Every day",
+  weekly: "Every week",
+  monthly: "Every month",
+};
+
+/** Parse "#tag @list" tokens out of the quick-add text. */
+export function parseQuickAdd(raw: string): {
+  text: string;
+  tags: string[];
+} {
+  const tags: string[] = [];
+  const text = raw
+    .replace(/#([\w-]+)/g, (_m, tag: string) => {
+      tags.push(tag.toLowerCase());
+      return "";
+    })
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return { text, tags };
+}
+
+/** Attachment shape stored as JSON in the task row. */
+export type Attachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  data: string; // data URL
+};
+
+export function parseAttachments(json: string | undefined): Attachment[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function startOfDay(d: Date) {
+  const copy = new Date(d);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+export function isToday(ts: number) {
+  const d = new Date(ts);
+  const today = startOfDay(new Date()).getTime();
+  return d.getTime() >= today && d.getTime() < today + 86_400_000;
+}
+
+export function isOverdue(task: TaskDoc) {
+  return (
+    !task.isCompleted &&
+    task.dueAt !== undefined &&
+    task.dueAt < startOfDay(new Date()).getTime()
+  );
+}
+
+export function isDueToday(task: TaskDoc) {
+  return task.dueAt !== undefined && isToday(task.dueAt);
+}
+
+/** Human label like "Today 3:00 PM", "Tomorrow", "Mon, Sep 24 · 9:00 AM". */
+export function formatDueLabel(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+  const today0 = startOfDay(now).getTime();
+  const diffDays = Math.round((startOfDay(d).getTime() - today0) / 86_400_000);
+  if (diffDays === 0) return hasTime ? `Today ${time}` : "Today";
+  if (diffDays === 1) return hasTime ? `Tomorrow ${time}` : "Tomorrow";
+  if (diffDays === -1) return hasTime ? `Yesterday ${time}` : "Yesterday";
+  const date = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return hasTime ? `${date} · ${time}` : date;
+}
+
+/** Default datetime-local value (next hour) for a new due date. */
+export function defaultDueLocal(): string {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  return toLocalInput(d);
+}
+
+export function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** "5 minutes before" offsets offered in the reminder picker. */
+export const REMINDER_OFFSETS: { minutes: number | null; label: string }[] = [
+  { minutes: null, label: "At due time" },
+  { minutes: 5, label: "5 min before" },
+  { minutes: 15, label: "15 min before" },
+  { minutes: 30, label: "30 min before" },
+  { minutes: 60, label: "1 hour before" },
+  { minutes: 1440, label: "1 day before" },
+];

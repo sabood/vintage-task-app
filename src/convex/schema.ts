@@ -51,6 +51,22 @@ export const noteInkValidator = v.union(
 );
 export type NoteInk = Infer<typeof noteInkValidator>;
 
+// task priority rating
+export const taskPriorityValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+export type TaskPriority = Infer<typeof taskPriorityValidator>;
+
+// how a recurring task repeats
+export const taskRecurrenceValidator = v.union(
+  v.literal("daily"),
+  v.literal("weekly"),
+  v.literal("monthly"),
+);
+export type TaskRecurrence = Infer<typeof taskRecurrenceValidator>;
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -74,10 +90,34 @@ const schema = defineSchema(
       isCompleted: v.boolean(), // false until the task is checked off
       listId: v.optional(v.id("taskLists")), // which named list it belongs to
       sourcePageId: v.optional(v.id("notePages")), // set when flagged from a note
+      description: v.optional(v.string()), // notes / instructions / links
+      dueAt: v.optional(v.number()), // deadline timestamp (ms)
+      remindAt: v.optional(v.number()), // reminder timestamp (ms)
+      priority: v.optional(taskPriorityValidator), // high / medium / low
+      starred: v.optional(v.boolean()), // ⭐ important flag
+      tags: v.optional(v.array(v.string())), // e.g. ["work", "home"]
+      recurrence: v.optional(taskRecurrenceValidator), // daily / weekly / monthly
+      completedAt: v.optional(v.number()), // when it was checked off
+      attachments: v.optional(v.string()), // JSON: [{id,name,type,size,data}]
     }).index("by_owner", ["ownerId"]),
 
     // named task lists (e.g. "Homework", "Chores")
     taskLists: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
+      folderId: v.optional(v.id("taskFolders")), // grouping into folders
+    }).index("by_owner", ["ownerId"]),
+
+    // subtasks (steps) that break a big task into pieces
+    taskSteps: defineTable({
+      ownerId: v.id("users"),
+      taskId: v.id("tasks"),
+      text: v.string(),
+      isCompleted: v.boolean(),
+    }).index("by_task", ["taskId"]),
+
+    // folders that group task lists
+    taskFolders: defineTable({
       ownerId: v.id("users"),
       name: v.string(),
     }).index("by_owner", ["ownerId"]),

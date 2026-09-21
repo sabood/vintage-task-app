@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import NotesSidebar from "@/components/NotesSidebar";
 import TasksSidebar from "@/components/TasksSidebar";
+import type { ActiveTaskView } from "@/components/TasksSidebar";
 import NotesPanel from "@/components/NotesPanel";
 import TasksPanel from "@/components/TasksPanel";
 import { format } from "date-fns";
@@ -18,6 +19,7 @@ type Section = "tasks" | "notes";
 type NotebookId = Id<"notebooks">;
 type PageId = Id<"notePages">;
 type ListId = Id<"taskLists">;
+type FolderId = Id<"taskFolders">;
 
 function greetingForHour(hour: number) {
   if (hour < 12) return "Good morning";
@@ -43,10 +45,15 @@ export default function Dashboard() {
 
   // ── Task lists (rendered inside the side menu on Tasks) ────────────
   const taskLists = useQuery(api.tasks.listLists);
+  const taskFolders = useQuery(api.tasks.listFolders);
+  const allTasks = useQuery(api.tasks.list);
   const addList = useMutation(api.tasks.addList);
   const renameList = useMutation(api.tasks.renameList);
   const removeList = useMutation(api.tasks.removeList);
-  const [activeListId, setActiveListId] = useState<ListId | null>(null);
+  const addFolderM = useMutation(api.tasks.addFolder);
+  const removeFolderM = useMutation(api.tasks.removeFolder);
+  const setListFolderM = useMutation(api.tasks.setListFolder);
+  const [activeTaskView, setActiveTaskView] = useState<ActiveTaskView>(null);
 
   const nbList = notebooks ?? [];
   const [activeNotebookId, setActiveNotebookId] = useState<NotebookId | null>(null);
@@ -206,7 +213,7 @@ export default function Dashboard() {
     }
     try {
       const id = await addList({ name: clean });
-      setActiveListId(id);
+      setActiveTaskView(id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't create list.");
     }
@@ -229,10 +236,68 @@ export default function Dashboard() {
       return;
     try {
       await removeList({ id: list._id });
-      if (activeListId === list._id) setActiveListId(null);
+      if (activeTaskView === list._id) setActiveTaskView(null);
       toast.success("List deleted.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't delete list.");
+    }
+  };
+
+  const handleNewFolder = async () => {
+    const name = window.prompt("Folder name", "School");
+    if (name === null) return;
+    const clean = name.trim();
+    if (!clean) {
+      toast.error("Give the folder a name.");
+      return;
+    }
+    try {
+      await addFolderM({ name: clean });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create folder.");
+    }
+  };
+
+  const handleDeleteFolder = async (folder: { _id: FolderId; name: string }) => {
+    if (!window.confirm(`Delete folder “${folder.name}”? Its lists are kept.`)) return;
+    try {
+      await removeFolderM({ id: folder._id });
+      toast.success("Folder deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete folder.");
+    }
+  };
+
+  const handleMoveListToFolder = async (list: {
+    _id: ListId;
+    name: string;
+    folderId?: FolderId;
+  }) => {
+    const folders = taskFolders ?? [];
+    if (folders.length === 0) {
+      toast.error('Create a folder first — use “New folder” in the sidebar.');
+      return;
+    }
+    const options = [
+      ...folders.map((f, i) => `${i + 1}. ${f.name}`),
+      "0. Remove from folder",
+    ];
+    const pick = window.prompt(
+      `Move “${list.name}” to which folder?\n\n${options.join("\n")}`,
+      "1",
+    );
+    if (pick === null) return;
+    const n = Number(pick.trim());
+    const folder = folders[n - 1];
+    if (!folder || Number.isNaN(n)) {
+      toast.error("Pick a number from the list.");
+      return;
+    }
+    try {
+      await setListFolderM({ id: list._id, folderId: folder._id });
+      toast.success(`“${list.name}” moved to “${folder.name}”.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't move the list.");
     }
   };
 
@@ -283,12 +348,17 @@ export default function Dashboard() {
           {section === "tasks" ? (
             <TasksSidebar
               lists={taskLists ?? []}
+              folders={taskFolders ?? []}
+              tasks={allTasks ?? []}
               loading={taskLists === undefined}
-              activeListId={activeListId}
-              onSelectList={setActiveListId}
+              activeView={activeTaskView}
+              onSelectView={setActiveTaskView}
               onNewList={handleNewList}
               onRenameList={handleRenameList}
               onDeleteList={handleDeleteList}
+              onMoveListToFolder={handleMoveListToFolder}
+              onNewFolder={handleNewFolder}
+              onDeleteFolder={handleDeleteFolder}
             />
           ) : (
             <NotesSidebar
@@ -415,8 +485,9 @@ export default function Dashboard() {
 
           {section === "tasks" ? (
             <TasksPanel
-              activeListId={activeListId}
-              onSelectList={setActiveListId}
+              activeView={activeTaskView}
+              lists={taskLists ?? []}
+              onSelectView={setActiveTaskView}
             />
           ) : (
             <NotesPanel
