@@ -10,16 +10,19 @@ import {
   Download,
   FileSpreadsheet,
   Folder,
+  ImagePlus,
   Layers,
   Loader2,
   Package,
+  Pencil,
   Plus,
   Sigma,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
+import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 
 type FgId = Id<"finishedGoods">;
@@ -63,6 +66,60 @@ export default function CostingPanel({
   const updateItem = useMutation(api.costing.updateItem);
   const removeItem = useMutation(api.costing.removeItem);
   const updateFg = useMutation(api.costing.updateFinishedGood);
+  const setFgImage = useMutation(api.costing.setFgImage);
+  const clearFgImageM = useMutation(api.costing.clearFgImage);
+  const { confirm } = useAppDialogs();
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const handlePickImage = () => imageInputRef.current?.click();
+
+  const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !activeFg) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file (photo, PNG, JPG…).");
+      return;
+    }
+    if (file.size > 900_000) {
+      toast.error("Images up to ~900 KB can be attached.");
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      await setFgImage({ id: activeFg._id, data, name: file.name, size: file.size });
+      toast.success("Product image updated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't attach the image.");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    if (!activeFg?.imageUrl) return;
+    const ok = await confirm({
+      title: "Remove the product image?",
+      message: "The photo is detached from this product. It can be added again anytime.",
+      confirmLabel: "Remove image",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await clearFgImageM({ id: activeFg._id });
+      toast.success("Image removed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't remove the image.");
+    }
+  };
 
   // ── FG costing grid state ──────────────────────────────────────────
   const [addingMaterialId, setAddingMaterialId] = useState("");
@@ -242,7 +299,64 @@ export default function CostingPanel({
       ) : view?.kind === "fg" && activeFg ? (
         <>
           {/* product header */}
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-3 shadow-sm">
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+            {/* product image: thumbnail or add button */}
+            {activeFg.imageUrl ? (
+              <div className="group/img relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLightboxOpen(true)}
+                  title="Click to enlarge"
+                  className="block size-14 overflow-hidden rounded-lg border bg-muted"
+                >
+                  <img
+                    src={activeFg.imageUrl}
+                    alt={activeFg.imageAlt ?? activeFg.name}
+                    className="size-full object-cover"
+                  />
+                </button>
+                <span className="absolute -right-1.5 -top-1.5 hidden gap-0.5 group-hover/img:flex">
+                  <button
+                    type="button"
+                    aria-label="Replace image"
+                    title="Replace image"
+                    className="grid size-5 place-items-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-primary"
+                    onClick={handlePickImage}
+                  >
+                    <Pencil className="size-2.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Remove image"
+                    title="Remove image"
+                    className="grid size-5 place-items-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-destructive"
+                    onClick={() => void handleRemoveImage()}
+                  >
+                    <Trash2 className="size-2.5" />
+                  </button>
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePickImage}
+                title="Add a product image"
+                className="grid size-14 shrink-0 place-items-center rounded-lg border border-dashed bg-muted/40 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                {uploadingImage ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ImagePlus className="size-5" />
+                )}
+              </button>
+            )}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageFile}
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate font-display text-base font-semibold">{activeFg.name}</p>
               <p className="truncate text-xs text-muted-foreground">
@@ -264,6 +378,30 @@ export default function CostingPanel({
               Edit details
             </Button>
           </div>
+
+          {/* image lightbox */}
+          {lightboxOpen && activeFg.imageUrl && (
+            <div
+              className="fixed inset-0 z-[100] grid place-items-center bg-foreground/60 p-6 backdrop-blur-sm animate-in fade-in duration-150"
+              onClick={() => setLightboxOpen(false)}
+            >
+              <figure className="max-h-full max-w-3xl">
+                <img
+                  src={activeFg.imageUrl}
+                  alt={activeFg.imageAlt ?? activeFg.name}
+                  className="max-h-[80vh] max-w-full rounded-xl border bg-card object-contain shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <figcaption className="mt-2 flex items-center justify-between gap-3 text-xs text-background/90">
+                  <span className="truncate">
+                    {activeFg.name}
+                    {activeFg.imageAlt ? ` — ${activeFg.imageAlt}` : ""}
+                  </span>
+                  <span className="shrink-0 opacity-70">Click anywhere to close</span>
+                </figcaption>
+              </figure>
+            </div>
+          )}
 
           {/* add-row bars */}
           <div className="mt-3 grid gap-2 md:grid-cols-2">

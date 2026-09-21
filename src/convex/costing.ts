@@ -500,6 +500,42 @@ export const removeFinishedGood = mutation({
   },
 });
 
+const MAX_IMAGE_BYTES = 900_000; // ~900 KB, matches task attachments
+
+/** Set (or replace) the product photo — stored as a data URL. */
+export const setFgImage = mutation({
+  args: {
+    id: v.id("finishedGoods"),
+    data: v.string(), // data URL
+    name: v.optional(v.string()), // original file name
+    size: v.optional(v.number()),
+  },
+  handler: async (ctx, { id, data, name, size }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const fg = await ctx.db.get(id);
+    if (fg === null) throw new Error("That product no longer exists.");
+    if (fg.ownerId !== userId) throw new Error("Not your product.");
+    if (size !== undefined && size > MAX_IMAGE_BYTES)
+      throw new Error("That image is too large (max ~900 KB).");
+    if (!data.startsWith("data:image/")) throw new Error("Only image files are supported.");
+    await ctx.db.patch(id, { imageUrl: data, imageAlt: name?.trim() || undefined });
+  },
+});
+
+/** Remove the product photo. */
+export const clearFgImage = mutation({
+  args: { id: v.id("finishedGoods") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const fg = await ctx.db.get(id);
+    if (fg === null) throw new Error("That product no longer exists.");
+    if (fg.ownerId !== userId) throw new Error("Not your product.");
+    await ctx.db.patch(id, { imageUrl: undefined, imageAlt: undefined });
+  },
+});
+
 // ── Sheet lines ─────────────────────────────────────────────────────────
 
 /** Every costing line for the user (for per-product totals across FGs). */

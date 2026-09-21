@@ -152,6 +152,8 @@ const schema = defineSchema(
       category: v.optional(v.string()), // managed master value
       subCategory: v.optional(v.string()), // managed master value
       note: v.optional(v.string()), // short product description
+      imageUrl: v.optional(v.string()), // data URL of the product photo
+      imageAlt: v.optional(v.string()), // original file name
       currency: v.optional(v.string()),
       markupPct: v.optional(v.number()),
     }).index("by_owner", ["ownerId"]),
