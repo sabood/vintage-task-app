@@ -479,3 +479,15 @@ export const remove = mutation({
     await ctx.db.delete(id);
   },
 });
+
+/** Count of a user's tasks (for admin usage stats). */
+export const countByOwner = query({
+  args: { ownerId: v.id("users") },
+  handler: async (ctx, { ownerId }) => {
+    const items = await ctx.db
+      .query("tasks")
+      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .collect();
+    return items.length;
+  },
+});

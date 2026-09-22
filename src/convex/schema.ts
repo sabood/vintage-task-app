@@ -16,6 +16,41 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
+// ── Settings / team roles ───────────────────────────────────────────────
+
+/**
+ * App sections a user can be granted or denied. `true` = allowed, `false` =
+ * denied. Missing keys default to allowed.
+ */
+export const permissionsValidator = v.object({
+  tasks: v.optional(v.boolean()),
+  notes: v.optional(v.boolean()),
+  costing: v.optional(v.boolean()),
+});
+export type Permissions = Infer<typeof permissionsValidator>;
+
+/** Edge-labeled team member managed from the Settings tab. */
+const teamMemberValidator = v.object({
+  userId: v.id("users"),
+  // "super" is reserved for the workspace owner (there can be only one).
+  role: v.union(
+    v.literal("super"),
+    v.literal("admin"),
+    v.literal("user"),
+    v.literal("member"),
+  ),
+  permissions: v.optional(permissionsValidator),
+  invitedBy: v.optional(v.id("users")),
+  joinedAt: v.number(),
+});
+
+// workspace settings singleton: one row per workspace (ownerId = super user)
+const settings = defineTable({
+  ownerId: v.id("users"), // the super user who owns this workspace
+  workspaceName: v.optional(v.string()),
+  members: v.array(teamMemberValidator), // every user + role + restrictions
+}).index("by_owner", ["ownerId"]);
+
 // note page formatting: body font family
 export const noteFontValidator = v.union(
   v.literal("sans"),
@@ -213,10 +248,7 @@ const schema = defineSchema(
 
     // add other tables here
 
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    settings,
   },
   {
     schemaValidation: false,

@@ -10,8 +10,9 @@ import TasksPanel from "@/components/TasksPanel";
 import CostingSidebar from "@/components/CostingSidebar";
 import type { CostingView } from "@/components/CostingSidebar";
 import CostingPanel from "@/components/CostingPanel";
+import SettingsPanel from "@/components/SettingsPanel";
 import { format } from "date-fns";
-import { Calculator, Check, CheckSquare, LogOut, NotebookPen } from "lucide-react";
+import { Calculator, Check, CheckSquare, LogOut, NotebookPen, Settings } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -19,7 +20,7 @@ import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 
-type Section = "tasks" | "notes" | "costing";
+type Section = "tasks" | "notes" | "costing" | "settings";
 type NotebookId = Id<"notebooks">;
 type PageId = Id<"notePages">;
 type ListId = Id<"taskLists">;
@@ -37,6 +38,34 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { confirm, prompt, promptMulti } = useAppDialogs();
   const [section, setSection] = useState<Section>("tasks");
+
+  // ── Access control (Settings tab roles & restrictions) ─────────────
+  const myAccess = useQuery(api.settings.getMyAccess);
+  const myRole = myAccess?.role ?? "member";
+  const canOpenSettings = myRole === "super" || myRole === "admin";
+  const sectionAllowed = (s: Section): boolean => {
+    if (s === "settings") return canOpenSettings;
+    if (myRole === "super") return true;
+    const p = myAccess?.permissions;
+    if (!p) return true; // no explicit restrictions
+    return p[s] !== false;
+  };
+  // If restrictions deny the current section, fall back to the first allowed.
+  useEffect(() => {
+    if (!myAccess) return;
+    if (!sectionAllowed(section)) {
+      setSection(
+        sectionAllowed("tasks")
+          ? "tasks"
+          : sectionAllowed("notes")
+            ? "notes"
+            : sectionAllowed("costing")
+              ? "costing"
+              : "tasks",
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myAccess]);
 
   // ── Notes tree state (rendered inside the side menu) ───────────────
   const notebooks = useQuery(api.notebooks.listNotebooks);
@@ -544,6 +573,16 @@ export default function Dashboard() {
       icon: Calculator,
       description: "Job cost calculator",
     },
+    ...(canOpenSettings
+      ? [
+          {
+            id: "settings" as Section,
+            label: "Settings",
+            icon: Settings,
+            description: "Users, roles & restrictions",
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -643,7 +682,7 @@ export default function Dashboard() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setSection(item.id)}
+                    onClick={() => sectionAllowed(item.id) && setSection(item.id)}
                     aria-label={item.label}
                     className={cn(
                       "grid size-7 place-items-center rounded-lg transition-colors",
@@ -665,7 +704,7 @@ export default function Dashboard() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setSection(item.id)}
+                    onClick={() => sectionAllowed(item.id) && setSection(item.id)}
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
@@ -712,7 +751,9 @@ export default function Dashboard() {
             </div>
           )}
 
-          {section === "costing" ? (
+          {section === "settings" ? (
+            <SettingsPanel />
+          ) : section === "costing" ? (
             <CostingPanel
               materials={materials ?? []}
               finishedGoods={finishedGoods ?? []}

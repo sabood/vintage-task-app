@@ -172,6 +172,30 @@ export const listAllPages = query({
   },
 });
 
+/** Count of a user's notebooks (for admin usage stats). */
+export const countNotebooksByOwner = query({
+  args: { ownerId: v.id("users") },
+  handler: async (ctx, { ownerId }) => {
+    const items = await ctx.db
+      .query("notebooks")
+      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .collect();
+    return items.length;
+  },
+});
+
+/** Count of a user's note pages (for admin usage stats). */
+export const countPagesByOwner = query({
+  args: { ownerId: v.id("users") },
+  handler: async (ctx, { ownerId }) => {
+    const items = await ctx.db
+      .query("notePages")
+      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .collect();
+    return items.length;
+  },
+});
+
 /** One page by id (ownership-checked), for tab lookups. */
 export const getPage = query({
   args: { id: v.id("notePages") },
