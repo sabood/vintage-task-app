@@ -4,6 +4,7 @@ import type { NoteColor } from "@/convex/schema";
 import { Button } from "@/components/ui/button";
 import EditorRibbon from "@/components/EditorRibbon";
 import {
+  collapseCaretOutOfFlagMark,
   currentBlockTag,
   type FormatCmd,
   type FormatState,
@@ -167,13 +168,12 @@ function PageCanvas({
           mark.className = "flag-mark";
           mark.appendChild(range.extractContents());
           range.insertNode(mark);
-          // caret goes right AFTER the mark so new letters stay plain
-          const after = document.createRange();
-          after.setStartAfter(mark);
-          after.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(after);
+          // Park the caret in a fresh PLAIN text node after the mark —
+          // placing it merely "after the mark" makes Chrome insert new
+          // letters inside the mark, so the highlight would keep spreading
+          // over unflagged text.
           editorRef.current?.focus();
+          collapseCaretOutOfFlagMark();
         } catch {
           // couldn't apply the visual mark — the task was still created
         }

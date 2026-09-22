@@ -105,6 +105,51 @@ function collapseToCaretAfterSelection(): void {
   }
 }
 
+/**
+ * Move the caret OUT of a flagged <mark class="flag-mark"> when it sits at
+ * the mark's end, into a fresh plain text node right after it.
+ *
+ * Chrome treats a caret "at the end of an inline element" ambiguously — typed
+ * letters land INSIDE the mark, so the flag highlight keeps spreading over
+ * text that was never flagged. Parking the caret in a real text node after
+ * the mark guarantees new typing stays plain. Clicking inside the mark's
+ * middle is left untouched so flagged text stays editable.
+ */
+export function collapseCaretOutOfFlagMark(): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  const startEl =
+    range.startContainer instanceof HTMLElement
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  const mark = startEl?.closest("mark.flag-mark");
+  if (!mark || !mark.parentNode) return;
+
+  // Only act when the caret is at the very END of the mark (just flagged, or
+  // typing right at its trailing edge).
+  const atEnd =
+    range.endContainer === mark
+      ? range.endOffset === mark.childNodes.length
+      : mark.contains(range.endContainer) &&
+        range.endOffset ===
+          (range.endContainer as Text | HTMLElement).textContent?.length;
+  if (!atEnd) return;
+
+  const anchor = document.createTextNode("\u200B"); // zero-width space = plain anchor for new typing
+  if (mark.nextSibling) {
+    mark.parentNode.insertBefore(anchor, mark.nextSibling);
+  } else {
+    mark.parentNode.appendChild(anchor);
+  }
+  const caret = document.createRange();
+  caret.setStart(anchor, 1);
+  caret.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(caret);
+  savedRange = caret.cloneRange();
+}
+
 /** Restore the cached selection inside the editor (best effort). */
 function restoreSavedSelection(): Selection | null {
   const sel = window.getSelection();
@@ -305,6 +350,9 @@ export function RichTextEditor({
       onKeyUp={captureSelection}
       onMouseUp={captureSelection}
       onFocus={captureSelection}
+      // keep the caret out of flagged <mark> spans while typing, so the flag
+      // highlight never spreads over text the user didn't select
+      onBeforeInput={() => collapseCaretOutOfFlagMark()}
       onPaste={(e) => {
         e.preventDefault();
         const lines = e.clipboardData
