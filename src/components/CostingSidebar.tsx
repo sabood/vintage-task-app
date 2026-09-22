@@ -2,11 +2,11 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import {
   ChevronDown,
   Folder,
+  Layers,
   Loader2,
   Package,
   Pencil,
   Plus,
-  ScrollText,
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -58,7 +58,36 @@ export default function CostingSidebar({
     return Array.from(map.entries());
   }, [finishedGoods]);
 
-  const materialsActive = view?.kind === "materials";
+  /** Top-level navigation: raw materials, products, projects. */
+  const navItems = [
+    {
+      id: "materials" as const,
+      label: "Raw materials",
+      icon: Layers,
+      count: materials.length,
+      unit: "item",
+      active: view?.kind === "materials",
+      onClick: onMaterialsClick,
+    },
+    {
+      id: "products" as const,
+      label: "Products",
+      icon: Package,
+      count: finishedGoods.length,
+      unit: "product",
+      active: view?.kind === "products" || view === null,
+      onClick: () => onSelectView({ kind: "products" }),
+    },
+    {
+      id: "projects" as const,
+      label: "Projects",
+      icon: Folder,
+      count: projects.length,
+      unit: "project",
+      active: view?.kind === "projects",
+      onClick: () => onSelectView({ kind: "projects" }),
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -68,45 +97,53 @@ export default function CostingSidebar({
         </span>
       </div>
 
-      {/* raw materials sheet */}
-      <div
-        className={cn(
-          "group/mat flex items-center gap-1 rounded-lg pr-1 transition-colors",
-          materialsActive ? "bg-primary/10" : "hover:bg-accent",
-        )}
-      >
-        <button
-          type="button"
-          onClick={onMaterialsClick}
-          aria-current={materialsActive ? "true" : undefined}
-          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-2 pr-1 text-left"
-        >
-          <ScrollText
+      {/* top-level nav: raw materials · products · projects */}
+      {navItems.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={item.onClick}
+            aria-current={item.active ? "true" : undefined}
             className={cn(
-              "size-4 shrink-0",
-              materialsActive ? "text-primary" : "text-muted-foreground/70",
+              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
+              item.active ? "bg-primary/10" : "hover:bg-accent",
             )}
-          />
-          <span className="min-w-0 flex-1">
+          >
+            <Icon
+              className={cn(
+                "size-4 shrink-0",
+                item.active ? "text-primary" : "text-muted-foreground/70",
+              )}
+            />
             <span
               className={cn(
-                "block truncate text-sm",
-                materialsActive ? "font-medium text-primary" : "text-foreground/85",
+                "min-w-0 flex-1 truncate text-sm",
+                item.active ? "font-medium text-primary" : "text-foreground/85",
               )}
             >
-              Raw materials
+              {item.label}
             </span>
-            <span className="block text-[10px] text-muted-foreground">
-              {materials.length} item{materials.length === 1 ? "" : "s"}
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-1.5 text-[10px] font-medium tabular-nums",
+                item.active
+                  ? "bg-primary/15 text-primary"
+                  : "bg-muted text-muted-foreground",
+              )}
+              title={`${item.count} ${item.unit}${item.count === 1 ? "" : "s"}`}
+            >
+              {item.count}
             </span>
-          </span>
-        </button>
-      </div>
+          </button>
+        );
+      })}
 
-      {/* projects → FG products */}
+      {/* project folders → FG products */}
       <div className="mt-3 flex items-center justify-between px-2 pb-1">
         <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-          Projects
+          Products by project
         </span>
         <button
           type="button"

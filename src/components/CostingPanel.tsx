@@ -11,9 +11,7 @@ import {
   Download,
   Factory,
   FileSpreadsheet,
-  Folder,
   ImagePlus,
-  Layers,
   Loader2,
   Package,
   Pencil,
@@ -465,48 +463,9 @@ export default function CostingPanel({
 
   return (
     <div>
-      {/* ── Tabs ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => onSelectView({ kind: "materials" })}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
-            view?.kind === "materials"
-              ? "border-primary/40 bg-primary/10 font-medium text-primary"
-              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <Layers className="size-3.5" />
-          Raw materials
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectView({ kind: "products" })}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
-            view?.kind === "products" || view === null
-              ? "border-primary/40 bg-primary/10 font-medium text-primary"
-              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <Package className="size-3.5" />
-          Products
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectView({ kind: "projects" })}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors",
-            view?.kind === "projects"
-              ? "border-primary/40 bg-primary/10 font-medium text-primary"
-              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <Folder className="size-3.5" />
-          Projects
-        </button>
-        {activeFg && (
+      {/* ── Open product chip (navigation lives in the sidebar) ──────── */}
+      {activeFg && (
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary">
             <FileSpreadsheet className="size-3.5" />
             {activeFg.name}
@@ -520,8 +479,8 @@ export default function CostingPanel({
               ✕
             </button>
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Views ────────────────────────────────────────────────────── */}
       {view?.kind === "materials" ? (
