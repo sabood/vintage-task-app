@@ -7,7 +7,9 @@ import ProductForm from "@/components/ProductForm";
 import ProjectsSheet from "@/components/ProjectsSheet";
 import type { CostingView } from "@/components/CostingSidebar";
 import {
+  ChevronDown,
   Download,
+  Factory,
   FileSpreadsheet,
   Folder,
   ImagePlus,
@@ -25,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 type FgId = Id<"finishedGoods">;
@@ -348,12 +351,16 @@ export default function CostingPanel({
     URL.revokeObjectURL(url);
   };
 
-  /** Open a print-ready costing sheet in a new window and show the print dialog. */
-  const printSheet = () => {
+  /** Open a print-ready costing sheet in a new window and show the print dialog.
+   *  withAmounts=false prints a production-floor sheet: quantities and units only,
+   *  no prices, amounts, margin or sales price. */
+  const printSheet = (withAmounts: boolean) => {
     if (!activeFg) return;
     const cur = currency;
     const money = (v: number) =>
-      `${cur}${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      withAmounts
+        ? `${cur}${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
     const today = new Date().toLocaleDateString(undefined, {
       year: "numeric",
       month: "long",
@@ -373,8 +380,8 @@ export default function CostingPanel({
           <td>${escapeHtml(r.label)}</td>
           <td class="num">${r.qty.toLocaleString()}</td>
           <td class="muted">${escapeHtml(r.unit ?? "—")}</td>
-          <td class="num">${r.unitPrice.toLocaleString()}</td>
-          <td class="num strong">${money(r.qty * r.unitPrice)}</td>
+          ${withAmounts ? `<td class="num">${r.unitPrice.toLocaleString()}</td>
+          <td class="num strong">${money(r.qty * r.unitPrice)}</td>` : ""}
         </tr>`,
       )
       .join("");
@@ -387,7 +394,7 @@ export default function CostingPanel({
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Costing sheet — ${escapeHtml(activeFg.name)}</title>
+  <title>${withAmounts ? "Costing sheet" : "Production sheet"} — ${escapeHtml(activeFg.name)}</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #18181b; margin: 40px; }
@@ -416,11 +423,11 @@ export default function CostingPanel({
 <body>
   <div class="head">
     <div>
-      <div class="brand">COSTING SHEET</div>
+      <div class="brand">${withAmounts ? "COSTING SHEET" : "PRODUCTION SHEET"}</div>
       <h1>${escapeHtml(activeFg.name)}</h1>
       <div class="meta">
         Project: ${escapeHtml(activeFg.projectName)}${codeLine ? ` &nbsp;·&nbsp; ${escapeHtml(codeLine)}` : ""}<br />
-        ${activeFg.unit ? `Sold per: ${escapeHtml(activeFg.unit)} &nbsp;·&nbsp; ` : ""}Margin: ${markupPct}%
+        ${activeFg.unit ? `Sold per: ${escapeHtml(activeFg.unit)}${withAmounts ? ` &nbsp;·&nbsp; Margin: ${markupPct}%` : ""}` : ""}
       </div>
     </div>
     <div style="text-align:right">
@@ -430,15 +437,16 @@ export default function CostingPanel({
   </div>
   <table>
     <thead>
-      <tr><th class="num">#</th><th>Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price</th><th class="num">Amount</th></tr>
+      <tr><th class="num">#</th><th>Description</th><th class="num">Qty</th><th>Unit</th>${withAmounts ? `<th class="num">Unit price</th><th class="num">Amount</th>` : ""}</tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
+  ${withAmounts ? `
   <table class="totals">
     <tr><td class="lbl">Subtotal</td><td class="val">${money(totals.subtotal)}</td></tr>
     <tr><td class="lbl">Margin (${markupPct}%)</td><td class="val">+${money(totals.markup)}</td></tr>
     <tr class="grand"><td class="lbl">Sales price</td><td class="val">${money(totals.grand)}</td></tr>
-  </table>
+  </table>` : ""}
   ${activeFg.note ? `<p class="note">${escapeHtml(activeFg.note)}</p>` : ""}
   <script>window.onload = function () { window.print(); };</script>
 </body>
@@ -913,17 +921,37 @@ export default function CostingPanel({
                 <Download className="size-3.5" />
                 Export CSV
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-lg"
-                onClick={printSheet}
-                title="Print this costing sheet"
-              >
-                <Printer className="size-3.5" />
-                Print
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg"
+                    title="Print this sheet"
+                  >
+                    <Printer className="size-3.5" />
+                    Print
+                    <ChevronDown className="size-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => printSheet(true)}>
+                    <Printer className="size-3.5" />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium">With amounts</span>
+                      <span className="text-[10px] text-muted-foreground">Prices &amp; sales price</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => printSheet(false)}>
+                    <Factory className="size-3.5" />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium">Without amounts</span>
+                      <span className="text-[10px] text-muted-foreground">Production sheet — qty only</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
         </>
