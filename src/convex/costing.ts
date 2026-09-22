@@ -257,6 +257,189 @@ export const updateMaterial = mutation({
   },
 });
 
+/**
+ * Bulk-import raw materials (used by the Excel import). Re-validates every row
+ * server-side so the review dialog can never write junk: duplicates either
+ * update the saved price or get skipped, and unknown units/categories are
+ * created once instead of once per row.
+ */
+export const bulkImportMaterials = mutation({
+  args: {
+    rows: v.array(
+      v.object({
+        code: v.optional(v.string()),
+        name: v.string(),
+        category: v.optional(v.string()),
+        subCategory: v.optional(v.string()),
+        unit: v.string(),
+        pricePerUnit: v.number(),
+      }),
+    ),
+    mode: v.union(v.literal("skip"), v.literal("update")),
+    autoCreate: v.boolean(),
+  },
+  handler: async (ctx, { rows, mode, autoCreate }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    if (rows.length === 0) throw new Error("Nothing to import.");
+
+    const materials = await ctx.db
+      .query("rawMaterials")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    const units = await ctx.db
+      .query("costUnits")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    const categories = await ctx.db
+      .query("costCategories")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+
+    const byCode = new Map<string, (typeof materials)[number]>();
+    const byNameUnit = new Map<string, (typeof materials)[number]>();
+    for (const m of materials) {
+      if (m.code) byCode.set(m.code.toUpperCase(), m);
+      byNameUnit.set(`${m.name.toLowerCase()}|${m.unit.toLowerCase()}`, m);
+    }
+    const unitByName = new Map(units.map((u) => [u.name.toLowerCase(), u] as const));
+    const categoryByName = new Map(
+      categories
+        .filter((c) => c.parentId === undefined)
+        .map((c) => [c.name.toLowerCase(), c] as const),
+    );
+
+    // sequential auto-codes, computed once and advanced as we insert
+    let codeCounter = 0;
+    for (const m of materials) {
+      if (typeof m.code !== "string" || !m.code.startsWith("RM")) continue;
+      const n = Number.parseInt(m.code.slice(2), 10);
+      if (Number.isFinite(n) && n > codeCounter) codeCounter = n;
+    }
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let unitsCreated = 0;
+    let categoriesCreated = 0;
+    const errors: string[] = [];
+
+    for (const [i, row] of rows.entries()) {
+      const position = i + 1;
+      try {
+        const name = row.name.trim().slice(0, MAX_NAME_LENGTH);
+        if (!name) throw new Error("missing name");
+        if (!Number.isFinite(row.pricePerUnit) || row.pricePerUnit < 0)
+          throw new Error("invalid price");
+        const unit = row.unit.trim().slice(0, 20) || "pcs";
+
+        // unit — create once if needed
+        if (!unitByName.has(unit.toLowerCase())) {
+          if (!autoCreate) throw new Error(`unknown unit “${unit}”`);
+          const id = await ctx.db.insert("costUnits", { ownerId: userId, name: unit });
+          unitByName.set(unit.toLowerCase(), { _id: id, name: unit, ownerId: userId } as never);
+          unitsCreated++;
+        }
+        const unitName = unitByName.get(unit.toLowerCase())?.name ?? unit;
+
+        // category + sub-category — create once if needed
+        let categoryName: string | undefined;
+        const rawCategory = row.category?.trim();
+        if (rawCategory) {
+          const known = categoryByName.get(rawCategory.toLowerCase());
+          if (known) {
+            categoryName = known.name;
+          } else {
+            if (!autoCreate) throw new Error(`unknown category “${rawCategory}”`);
+            const id = await ctx.db.insert("costCategories", {
+              ownerId: userId,
+              name: rawCategory.slice(0, MAX_NAME_LENGTH),
+            });
+            const made = { _id: id, name: rawCategory, parentId: undefined, ownerId: userId };
+            categoryByName.set(rawCategory.toLowerCase(), made as never);
+            categoriesCreated++;
+            categoryName = made.name;
+          }
+        }
+
+        let subCategoryName: string | undefined;
+        const rawSub = row.subCategory?.trim();
+        if (rawSub && categoryName) {
+          const parent = categoryByName.get(categoryName.toLowerCase());
+          const knownSub = parent
+            ? categories.find(
+                (c) => c.parentId === parent._id && c.name.toLowerCase() === rawSub.toLowerCase(),
+              )
+            : undefined;
+          if (knownSub) {
+            subCategoryName = knownSub.name;
+          } else if (autoCreate) {
+            await ctx.db.insert("costCategories", {
+              ownerId: userId,
+              name: rawSub.slice(0, MAX_NAME_LENGTH),
+              parentId: parent?._id,
+            });
+            categoriesCreated++;
+            subCategoryName = rawSub;
+          } else {
+            throw new Error(`unknown sub-category “${rawSub}”`);
+          }
+        }
+
+        // duplicate handling
+        const code = row.code?.trim().toUpperCase();
+        const existing =
+          (code ? byCode.get(code) : undefined) ??
+          byNameUnit.get(`${name.toLowerCase()}|${unitName.toLowerCase()}`);
+        if (existing) {
+          if (mode === "skip") {
+            skipped++;
+          } else {
+            await ctx.db.patch(existing._id, {
+              pricePerUnit: row.pricePerUnit,
+              unit: unitName,
+              category: categoryName,
+              subCategory: subCategoryName,
+            });
+            updated++;
+          }
+          continue;
+        }
+
+        codeCounter++;
+        const autoCode = `RM${String(codeCounter).padStart(4, "0")}`;
+        const finalCode = code || autoCode;
+        const id = await ctx.db.insert("rawMaterials", {
+          ownerId: userId,
+          code: finalCode,
+          name,
+          category: categoryName,
+          subCategory: subCategoryName,
+          unit: unitName,
+          pricePerUnit: row.pricePerUnit,
+        });
+        const inserted = {
+          _id: id,
+          code: finalCode,
+          name,
+          unit: unitName,
+          category: categoryName,
+          subCategory: subCategoryName,
+          pricePerUnit: row.pricePerUnit,
+          ownerId: userId,
+        };
+        byCode.set(finalCode.toUpperCase(), inserted as never);
+        byNameUnit.set(`${name.toLowerCase()}|${unitName.toLowerCase()}`, inserted as never);
+        created++;
+      } catch (error) {
+        errors.push(`Row ${position}: ${error instanceof Error ? error.message : "failed"}`);
+      }
+    }
+
+    return { created, updated, skipped, unitsCreated, categoriesCreated, errors };
+  },
+});
+
 /** Delete a raw material. Existing sheet lines keep their copied values. */
 export const removeMaterial = mutation({
   args: { id: v.id("rawMaterials") },

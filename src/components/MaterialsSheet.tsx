@@ -3,16 +3,28 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import MasterDataManager from "@/components/MasterDataManager";
+import MaterialImportDialog from "@/components/MaterialImportDialog";
 import {
+  ChevronDown,
   Download,
+  FileSpreadsheet,
   Loader2,
   Package,
   Pencil,
   Plus,
   Search as SearchIcon,
   Settings2,
+  Sparkles,
   Trash2,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { exportMaterialTemplate, exportMaterials } from "@/lib/materialImport";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
@@ -132,6 +144,7 @@ export default function MaterialsSheet({
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [importOpen, setImportOpen] = useState(false);
 
   const categories = useMemo(
     () => Array.from(new Set(materials.map((m) => m.category).filter(Boolean) as string[])).sort(),
@@ -350,12 +363,74 @@ export default function MaterialsSheet({
                 </option>
               ))}
             </select>
-            {rows.length > 0 && (
-              <Button type="button" variant="outline" size="sm" className="h-7 rounded-lg text-xs" onClick={exportCsv}>
-                <Download className="size-3" />
-                CSV
-              </Button>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-7 rounded-lg text-xs">
+                  <FileSpreadsheet className="size-3" />
+                  Excel
+                  <ChevronDown className="size-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                  <Sparkles className="size-3.5" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">Import from Excel</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Bulk entry with a full check report
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() =>
+                    void exportMaterials(
+                      materials.map((m) => ({
+                        _id: m._id,
+                        code: m.code,
+                        name: m.name,
+                        category: m.category,
+                        subCategory: m.subCategory,
+                        unit: m.unit,
+                        pricePerUnit: m.pricePerUnit,
+                      })),
+                      units.map((u) => ({ _id: u._id, name: u.name })),
+                      allCategories.map((c) => ({ _id: c._id, name: c.name, parentId: c.parentId })),
+                    )
+                  }
+                >
+                  <Download className="size-3.5" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">Export to Excel</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      All {materials.length} materials + reference sheet
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    void exportMaterialTemplate(
+                      units.map((u) => ({ _id: u._id, name: u.name })),
+                      allCategories.map((c) => ({ _id: c._id, name: c.name, parentId: c.parentId })),
+                      `RM${String(materials.length + 1).padStart(4, "0")}`,
+                    )
+                  }
+                >
+                  <Plus className="size-3.5" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">Blank template</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Headers, examples &amp; how-to sheet
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={exportCsv}>
+                  <Download className="size-3.5" />
+                  <span className="text-xs font-medium">Export CSV (visible rows)</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -433,6 +508,14 @@ export default function MaterialsSheet({
         This list is the master price list — costing sheets pick materials from here, so prices stay
         consistent across products.
       </p>
+
+      <MaterialImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        materials={materials}
+        units={units}
+        categories={allCategories}
+      />
     </div>
   );
 }
