@@ -39,6 +39,8 @@ const teamMemberValidator = v.object({
     v.literal("user"),
     v.literal("member"),
   ),
+  // when set, the member's access comes from a manually created role
+  customRoleId: v.optional(v.id("customRoles")),
   permissions: v.optional(permissionsValidator),
   invitedBy: v.optional(v.id("users")),
   joinedAt: v.number(),
@@ -49,6 +51,29 @@ const settings = defineTable({
   ownerId: v.id("users"), // the super user who owns this workspace
   workspaceName: v.optional(v.string()),
   members: v.array(teamMemberValidator), // every user + role + restrictions
+}).index("by_owner", ["ownerId"]);
+
+// manually created roles (Settings → Roles)
+const customRoles = defineTable({
+  ownerId: v.id("users"), // workspace that defined the role
+  name: v.string(),
+  description: v.optional(v.string()),
+  permissions: v.optional(permissionsValidator),
+  createdAt: v.number(),
+}).index("by_owner", ["ownerId"]);
+
+// invites for people who haven't signed in yet; they join automatically on
+// their first sign-in (matched by email)
+const pendingInvites = defineTable({
+  ownerId: v.id("users"), // workspace that sent the invite
+  email: v.string(), // lower-cased
+  role: v.union(
+    v.literal("admin"),
+    v.literal("user"),
+    v.literal("member"),
+  ),
+  customRoleId: v.optional(v.id("customRoles")),
+  createdAt: v.number(),
 }).index("by_owner", ["ownerId"]);
 
 // note page formatting: body font family
@@ -249,6 +274,8 @@ const schema = defineSchema(
     // add other tables here
 
     settings,
+    customRoles,
+    pendingInvites,
   },
   {
     schemaValidation: false,

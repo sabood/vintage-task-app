@@ -91,6 +91,52 @@ async function actorRole(
 
 // ── Queries ─────────────────────────────────────────────────────────────
 
+/**
+ * Claim any pending invite for the caller's email and register them as a
+ * member. Called once per sign-in from the client; silently no-ops when
+ * there's no invite.
+ */
+export const claimPendingInvite = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return;
+    const user = await ctx.db.get(userId);
+    if (user === null || !user.email) return;
+    const email = user.email.trim().toLowerCase();
+
+    // Find a pending invite addressed to this email.
+    const invites = await ctx.db.query("pendingInvites").collect();
+    const invite = invites.find((i) => i.email === email);
+    if (invite === undefined) return;
+
+    const settingsDoc = await getSettings(ctx, invite.ownerId);
+    if (settingsDoc === null) {
+      await ctx.db.delete(invite._id);
+      return;
+    }
+    // Already a member? Just drop the stale invite.
+    if (settingsDoc.members.some((m) => m.userId === userId)) {
+      await ctx.db.delete(invite._id);
+      return;
+    }
+    await ctx.db.patch(settingsDoc._id, {
+      members: [
+        ...settingsDoc.members,
+        {
+          userId,
+          role: invite.role,
+          customRoleId: invite.customRoleId,
+          permissions: { tasks: true, notes: true, costing: true },
+          invitedBy: invite.ownerId,
+          joinedAt: Date.now(),
+        },
+      ],
+    });
+    await ctx.db.delete(invite._id);
+  },
+});
+
 /** My role + permissions within the workspace (null when signed out). */
 export const getMyAccess = query({
   args: {},
@@ -103,9 +149,17 @@ export const getMyAccess = query({
       return { role: "member" as WorkspaceRole, permissions: undefined, isSuper: false };
     }
     const me = settingsDoc.members.find((m) => m.userId === userId);
+    // Custom role: merge its permissions with any direct restrictions.
+    let permissions = me?.permissions ?? undefined;
+    if (me?.customRoleId !== undefined) {
+      const customRole = await ctx.db.get(me.customRoleId);
+      if (customRole !== null) {
+        permissions = { ...(customRole.permissions ?? {}), ...(permissions ?? {}) };
+      }
+    }
     return {
       role: (me?.role ?? "member") as WorkspaceRole,
-      permissions: me?.permissions ?? undefined,
+      permissions,
       isSuper: settingsDoc.ownerId === userId,
     };
   },
@@ -142,6 +196,7 @@ export const listMembers = query({
         return {
           userId: m.userId,
           role: m.role as WorkspaceRole,
+          customRoleId: m.customRoleId,
           permissions: m.permissions ?? undefined,
           joinedAt: m.joinedAt,
           name: user?.name ?? undefined,
@@ -156,7 +211,12 @@ export const listMembers = query({
 
 // ── Mutations ───────────────────────────────────────────────────────────
 
-/** Invite an existing signed-up user (by email) into the workspace. */
+/**
+ * Invite a user by email into the workspace.
+ * - If they already signed in, they're added immediately.
+ * - Otherwise a pending invite is stored; they join automatically the first
+ *   time they sign in (claimPendingInvite).
+ */
 export const inviteMember = mutation({
   args: {
     email: v.string(),
@@ -165,8 +225,9 @@ export const inviteMember = mutation({
       v.literal("user"),
       v.literal("member"),
     ),
+    customRoleId: v.optional(v.id("customRoles")),
   },
-  handler: async (ctx, { email, role }) => {
+  handler: async (ctx, { email, role, customRoleId }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const settingsDoc = await getOrCreateSettings(ctx, userId);
@@ -174,12 +235,35 @@ export const inviteMember = mutation({
     if (!actor || !canManage(actor, role)) {
       throw new Error("You can't assign that role.");
     }
-    const user = await findUserByEmail(ctx, email);
-    if (user === null) {
-      throw new Error(
-        "No user with that email has signed in yet — they must open the app once before you can add them.",
-      );
+    if (customRoleId !== undefined) {
+      const custom = await ctx.db.get(customRoleId);
+      if (custom === null || custom.ownerId !== settingsDoc.ownerId) {
+        throw new Error("That custom role no longer exists.");
+      }
     }
+    const cleanEmail = email.trim().toLowerCase();
+
+    const user = await findUserByEmail(ctx, cleanEmail);
+    if (user === null) {
+      // Not signed in yet → store a pending invite.
+      const invites = await ctx.db.query("pendingInvites").collect();
+      const dup = invites.find(
+        (i) => i.ownerId === settingsDoc.ownerId && i.email === cleanEmail,
+      );
+      if (dup !== undefined) {
+        await ctx.db.patch(dup._id, { role, customRoleId });
+      } else {
+        await ctx.db.insert("pendingInvites", {
+          ownerId: settingsDoc.ownerId,
+          email: cleanEmail,
+          role,
+          customRoleId,
+          createdAt: Date.now(),
+        });
+      }
+      return { pending: true as const };
+    }
+
     if (settingsDoc.members.some((m) => m.userId === user._id)) {
       throw new Error("That user is already a member of the workspace.");
     }
@@ -189,11 +273,215 @@ export const inviteMember = mutation({
         {
           userId: user._id,
           role,
+          customRoleId,
           permissions: { tasks: true, notes: true, costing: true },
           invitedBy: userId,
           joinedAt: Date.now(),
         },
       ],
+    });
+    return { pending: false as const };
+  },
+});
+
+// ── Pending invites ─────────────────────────────────────────────────────
+
+/** Pending invites for the caller's workspace (Settings → Invites). */
+export const listPendingInvites = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) return [];
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (actor !== "super" && actor !== "admin") return [];
+    const invites = await ctx.db.query("pendingInvites").collect();
+    return invites
+      .filter((i) => i.ownerId === settingsDoc.ownerId)
+      .map((i) => ({
+        _id: i._id,
+        email: i.email,
+        role: i.role,
+        customRoleId: i.customRoleId,
+        createdAt: i.createdAt,
+      }));
+  },
+});
+
+/** Cancel a pending invite. */
+export const cancelPendingInvite = mutation({
+  args: { id: v.id("pendingInvites") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) throw new Error("No workspace.");
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (actor !== "super" && actor !== "admin") {
+      throw new Error("Only the super user or an admin can cancel invites.");
+    }
+    const invite = await ctx.db.get(id);
+    if (invite === null) return;
+    if (invite.ownerId !== settingsDoc.ownerId) {
+      throw new Error("That invite belongs to another workspace.");
+    }
+    await ctx.db.delete(id);
+  },
+});
+
+// ── Custom roles ────────────────────────────────────────────────────────
+
+/** Manually created roles for the caller's workspace. */
+export const listCustomRoles = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) return [];
+    const roles = await ctx.db.query("customRoles").collect();
+    return roles
+      .filter((r) => r.ownerId === settingsDoc.ownerId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  },
+});
+
+/** Create a manually defined role. */
+export const createCustomRole = mutation({
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    permissions: permissionsValidator,
+  },
+  handler: async (ctx, { name, description, permissions }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getOrCreateSettings(ctx, userId);
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (actor !== "super" && actor !== "admin") {
+      throw new Error("Only the super user or an admin can create roles.");
+    }
+    const clean = name.trim().slice(0, 40);
+    if (clean.length === 0) throw new Error("Give the role a name.");
+    const existing = await ctx.db.query("customRoles").collect();
+    if (
+      existing.some(
+        (r) =>
+          r.ownerId === settingsDoc.ownerId &&
+          r.name.toLowerCase() === clean.toLowerCase(),
+      )
+    ) {
+      throw new Error("A role with that name already exists.");
+    }
+    return await ctx.db.insert("customRoles", {
+      ownerId: settingsDoc.ownerId,
+      name: clean,
+      description: description?.trim().slice(0, 120) || undefined,
+      permissions,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/** Edit a manually defined role; members using it get the new access. */
+export const updateCustomRole = mutation({
+  args: {
+    id: v.id("customRoles"),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
+    permissions: v.optional(permissionsValidator),
+  },
+  handler: async (ctx, { id, name, description, permissions }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) throw new Error("No workspace.");
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (actor !== "super" && actor !== "admin") {
+      throw new Error("Only the super user or an admin can edit roles.");
+    }
+    const role = await ctx.db.get(id);
+    if (role === null || role.ownerId !== settingsDoc.ownerId) {
+      throw new Error("That role no longer exists.");
+    }
+    const patch: Record<string, unknown> = {};
+    if (name !== undefined) {
+      const clean = name.trim().slice(0, 40);
+      if (clean.length === 0) throw new Error("Give the role a name.");
+      patch.name = clean;
+    }
+    if (description !== undefined) {
+      patch.description = description.trim().slice(0, 120) || undefined;
+    }
+    if (permissions !== undefined) patch.permissions = permissions;
+    await ctx.db.patch(id, patch);
+  },
+});
+
+/** Delete a manually defined role; members fall back to their base role. */
+export const deleteCustomRole = mutation({
+  args: { id: v.id("customRoles") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) throw new Error("No workspace.");
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (actor !== "super" && actor !== "admin") {
+      throw new Error("Only the super user or an admin can delete roles.");
+    }
+    const role = await ctx.db.get(id);
+    if (role === null) return;
+    if (role.ownerId !== settingsDoc.ownerId) {
+      throw new Error("That role belongs to another workspace.");
+    }
+    // Detach members and pending invites from the deleted role.
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.customRoleId === id ? { ...m, customRoleId: undefined } : m,
+      ),
+    });
+    const invites = await ctx.db.query("pendingInvites").collect();
+    for (const i of invites) {
+      if (i.customRoleId === id) {
+        await ctx.db.patch(i._id, { customRoleId: undefined });
+      }
+    }
+    await ctx.db.delete(id);
+  },
+});
+
+/** Assign (or clear, with undefined) a custom role on a member. */
+export const setMemberCustomRole = mutation({
+  args: {
+    userId: v.id("users"),
+    customRoleId: v.optional(v.id("customRoles")),
+  },
+  handler: async (ctx, { userId: targetId, customRoleId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) throw new Error("No workspace.");
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (!actor || (actor !== "super" && actor !== "admin")) {
+      throw new Error("Only the super user or an admin can assign roles.");
+    }
+    if (targetId === settingsDoc.ownerId) {
+      throw new Error("The super user's access can't be changed.");
+    }
+    const target = settingsDoc.members.find((m) => m.userId === targetId);
+    if (!target) throw new Error("That user is not a member.");
+    if (customRoleId !== undefined) {
+      const custom = await ctx.db.get(customRoleId);
+      if (custom === null || custom.ownerId !== settingsDoc.ownerId) {
+        throw new Error("That custom role no longer exists.");
+      }
+    }
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.userId === targetId ? { ...m, customRoleId } : m,
+      ),
     });
   },
 });

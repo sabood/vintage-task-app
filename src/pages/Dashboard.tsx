@@ -42,9 +42,13 @@ export default function Dashboard() {
   // ── Access control (Settings tab roles & restrictions) ─────────────
   const myAccess = useQuery(api.settings.getMyAccess);
   const ensureWorkspace = useMutation(api.settings.ensureWorkspace);
+  const claimPendingInvite = useMutation(api.settings.claimPendingInvite);
   useEffect(() => {
-    // Bootstrap the workspace (super-user row) once on sign-in.
-    ensureWorkspace().catch(() => {});
+    // Bootstrap the workspace (super-user row) and claim any pending invite
+    // for this account once on sign-in.
+    ensureWorkspace()
+      .then(() => claimPendingInvite())
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const myRole = myAccess?.role ?? "member";
