@@ -28,15 +28,28 @@ function canManage(actor: WorkspaceRole, target: WorkspaceRole): boolean {
   return false;
 }
 
-/** Get (or lazily create) the settings row. Caller must be signed in. */
+/**
+ * Read the caller's settings row (queries only read; if none exists yet the
+ * caller simply isn't a member of an initialized workspace).
+ */
+async function getSettings(
+  ctx: { db: any },
+  userId: Id<"users">,
+): Promise<Doc<"settings"> | null> {
+  const all = await ctx.db.query("settings").collect();
+  return all.find((s: Doc<"settings">) => s.ownerId === userId) ?? null;
+}
+
+/**
+ * Get (or lazily create) the settings row — MUTATIONS ONLY. The first user
+ * to run this becomes the workspace's super user.
+ */
 async function getOrCreateSettings(
   ctx: { db: any },
   userId: Id<"users">,
 ): Promise<Doc<"settings">> {
-  const all = await ctx.db.query("settings").collect();
-  const mine = all.find((s: Doc<"settings">) => s.ownerId === userId);
-  if (mine) return mine;
-  // The first user to touch settings becomes the super user.
+  const existing = await getSettings(ctx, userId);
+  if (existing) return existing;
   const id = await ctx.db.insert("settings", {
     ownerId: userId,
     members: [
@@ -84,7 +97,11 @@ export const getMyAccess = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) return null;
-    const settingsDoc = await getOrCreateSettings(ctx, userId);
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) {
+      // Workspace not initialized yet — the mutation below will bootstrap it.
+      return { role: "member" as WorkspaceRole, permissions: undefined, isSuper: false };
+    }
     const me = settingsDoc.members.find((m) => m.userId === userId);
     return {
       role: (me?.role ?? "member") as WorkspaceRole,
@@ -94,13 +111,27 @@ export const getMyAccess = query({
   },
 });
 
+/**
+ * Initialize the caller's workspace if it doesn't exist yet. Idempotent —
+ * safe to call on app load. The first caller becomes the super user.
+ */
+export const ensureWorkspace = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    await getOrCreateSettings(ctx, userId);
+  },
+});
+
 /** Full member directory (Settings tab). Allowed for super/admin only. */
 export const listMembers = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) return null;
-    const settingsDoc = await getOrCreateSettings(ctx, userId);
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) return [];
     const role = await actorRole(ctx, settingsDoc, userId);
     if (role !== "super" && role !== "admin") {
       throw new Error("Only the super user or an admin can view the member list.");

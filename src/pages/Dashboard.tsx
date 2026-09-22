@@ -41,6 +41,12 @@ export default function Dashboard() {
 
   // ── Access control (Settings tab roles & restrictions) ─────────────
   const myAccess = useQuery(api.settings.getMyAccess);
+  const ensureWorkspace = useMutation(api.settings.ensureWorkspace);
+  useEffect(() => {
+    // Bootstrap the workspace (super-user row) once on sign-in.
+    ensureWorkspace().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const myRole = myAccess?.role ?? "member";
   const canOpenSettings = myRole === "super" || myRole === "admin";
   const sectionAllowed = (s: Section): boolean => {
