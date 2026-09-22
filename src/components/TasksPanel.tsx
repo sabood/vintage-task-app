@@ -55,6 +55,7 @@ export default function TasksPanel({
   onSelectView: (view: ActiveTaskView) => void;
 }) {
   const allTasks = useQuery(api.tasks.list);
+  const allPages = useQuery(api.notebooks.listAllPages);
   const addTask = useMutation(api.tasks.add);
   const toggleTask = useMutation(api.tasks.toggle);
   const removeTask = useMutation(api.tasks.remove);
@@ -190,6 +191,14 @@ export default function TasksPanel({
   };
 
   const openTask = openTaskId ? (allTasks ?? []).find((t) => t._id === openTaskId) ?? null : null;
+
+  /** Title of the note page a task was flagged from. */
+  const sourcePageTitle = (pageId: Id<"notePages">): string => {
+    const page = (allPages ?? []).find((p) => p._id === pageId);
+    if (!page) return "From note";
+    const title = page.title.trim();
+    return title || "Untitled page";
+  };
 
   return (
     <div>
@@ -404,10 +413,13 @@ export default function TasksPanel({
                               {task.sourcePageId && (
                                 <Badge
                                   variant="secondary"
-                                  className="hidden gap-1 rounded-full bg-amber-500/10 px-1.5 text-amber-700 sm:inline-flex dark:bg-amber-500/15 dark:text-amber-400"
+                                  title={`From note: ${sourcePageTitle(task.sourcePageId)}`}
+                                  className="inline-flex max-w-44 gap-1 rounded-full bg-amber-500/10 px-1.5 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
                                 >
-                                  <Flag className="size-2.5" />
-                                  From note
+                                  <Flag className="size-2.5 shrink-0" />
+                                  <span className="truncate">
+                                    {sourcePageTitle(task.sourcePageId)}
+                                  </span>
                                 </Badge>
                               )}
                             </span>
