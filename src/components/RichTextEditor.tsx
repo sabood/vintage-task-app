@@ -81,39 +81,66 @@ function collapseToCaretAfterSelection(): void {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
   const range = sel.getRangeAt(0);
-  const styled =
+
+  // Find the styled span the command just painted. The caret may sit inside
+  // the span, or (collapsed) as an offset in the PARENT element right after
+  // it — so check the node before the caret position too.
+  let span: HTMLElement | null = null;
+  const direct =
     range.startContainer instanceof HTMLElement
       ? range.startContainer
       : range.startContainer.parentElement;
-  if (!styled) return;
-  const span = styled.closest("span[style], font");
-  if (span?.nextSibling) {
-    const after = document.createRange();
-    after.setStart(span.nextSibling, 0);
-    after.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(after);
-  } else if (span?.parentNode) {
-    const after = document.createRange();
-    after.setStartAfter(span);
-    after.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(after);
+  span = direct?.closest<HTMLElement>("span[style], font") ?? null;
+  if (!span && range.startContainer.parentNode instanceof HTMLElement) {
+    const prev = range.startContainer.childNodes[range.startOffset - 1];
+    const prevEl =
+      prev instanceof HTMLElement
+        ? prev
+        : (prev?.parentElement ?? null);
+    span = prevEl?.closest<HTMLElement>("span[style], font") ?? null;
   }
-  if (span) {
-    savedRange = sel.getRangeAt(0).cloneRange();
-  }
+  if (!span) return;
+
+  // The caret now sits at the edge of the styled span — park it in a fresh
+  // PLAIN text node so new letters can't inherit the color/highlight.
+  // (Chrome inserts typed characters INSIDE an inline element when the
+  // caret is merely "at its end".)
+  parkCaretAfterInline(span);
 }
 
 /**
- * Move the caret OUT of a flagged <mark class="flag-mark"> when it sits at
- * the mark's end, into a fresh plain text node right after it.
+ * Park the caret in a fresh zero-width text node right after an inline
+ * element (`span`, `font`, `mark`…), so typing continues plain instead of
+ * inheriting that element's styles. Shared by color/highlight painting and
+ * the flag-mark guard.
+ */
+function parkCaretAfterInline(el: HTMLElement): void {
+  if (!el.parentNode) return;
+  const anchor = document.createTextNode("\u200B");
+  if (el.nextSibling) {
+    el.parentNode.insertBefore(anchor, el.nextSibling);
+  } else {
+    el.parentNode.appendChild(anchor);
+  }
+  const caret = document.createRange();
+  caret.setStart(anchor, 1);
+  caret.collapse(true);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(caret);
+  savedRange = caret.cloneRange();
+}
+
+/**
+ * Move the caret OUT of an inline styled element (a flagged
+ * <mark class="flag-mark"> or a color/highlight <span style>) when it sits
+ * at that element's end, into a fresh plain text node right after it.
  *
  * Chrome treats a caret "at the end of an inline element" ambiguously — typed
- * letters land INSIDE the mark, so the flag highlight keeps spreading over
- * text that was never flagged. Parking the caret in a real text node after
- * the mark guarantees new typing stays plain. Clicking inside the mark's
- * middle is left untouched so flagged text stays editable.
+ * letters land INSIDE the element, so the highlight keeps spreading over text
+ * that was never selected. Parking the caret in a real text node after the
+ * element guarantees new typing stays plain. Clicking inside the middle is
+ * left untouched so styled text stays editable.
  */
 export function collapseCaretOutOfFlagMark(): void {
   const sel = window.getSelection();
@@ -123,11 +150,15 @@ export function collapseCaretOutOfFlagMark(): void {
     range.startContainer instanceof HTMLElement
       ? range.startContainer
       : range.startContainer.parentElement;
-  const mark = startEl?.closest("mark.flag-mark");
+  const mark =
+    startEl?.closest<HTMLElement>("mark.flag-mark, span[style]") ?? null;
   if (!mark || !mark.parentNode) return;
+  // Never hijack the caret when the user has an active selection
+  // (e.g. re-selecting styled text to restyle it).
+  if (!range.collapsed) return;
 
-  // Only act when the caret is at the very END of the mark (just flagged, or
-  // typing right at its trailing edge).
+  // Only act when the caret is at the very END of the element (just styled,
+  // or typing right at its trailing edge).
   const atEnd =
     range.endContainer === mark
       ? range.endOffset === mark.childNodes.length
@@ -136,18 +167,7 @@ export function collapseCaretOutOfFlagMark(): void {
           (range.endContainer as Text | HTMLElement).textContent?.length;
   if (!atEnd) return;
 
-  const anchor = document.createTextNode("\u200B"); // zero-width space = plain anchor for new typing
-  if (mark.nextSibling) {
-    mark.parentNode.insertBefore(anchor, mark.nextSibling);
-  } else {
-    mark.parentNode.appendChild(anchor);
-  }
-  const caret = document.createRange();
-  caret.setStart(anchor, 1);
-  caret.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(caret);
-  savedRange = caret.cloneRange();
+  parkCaretAfterInline(mark);
 }
 
 /** Restore the cached selection inside the editor (best effort). */
