@@ -19,17 +19,19 @@ import {
 } from "@/lib/materialImport";
 import {
   AlertTriangle,
+  Bot,
   CheckCircle2,
   Copy,
   FileSpreadsheet,
   Info,
   Loader2,
+  ShieldAlert,
   Sparkles,
   Upload,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +39,7 @@ type MaterialDoc = Doc<"rawMaterials">;
 type UnitDoc = Doc<"costUnits">;
 type CategoryDoc = Doc<"costCategories">;
 
-type Filter = "all" | "ready" | "warnings" | "errors" | "duplicates";
+type Filter = "all" | "ready" | "warnings" | "errors" | "duplicates" | "ai-check" | "ai-reject";
 
 const STATUS_STYLE: Record<AnalyzedRow["status"], { label: string; className: string }> = {
   ready: {
@@ -74,6 +76,7 @@ export default function MaterialImportDialog({
   categories: CategoryDoc[];
 }) {
   const bulkImport = useMutation(api.costing.bulkImportMaterials);
+  const aiCheckRows = useAction(api.aiCheck.aiCheckRows);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [stage, setStage] = useState<"pick" | "review">("pick");
@@ -86,6 +89,10 @@ export default function MaterialImportDialog({
   const [autoCreate, setAutoCreate] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
   const [importing, setImporting] = useState(false);
+  const [aiChecking, setAiChecking] = useState(false);
+  const [aiVerdicts, setAiVerdicts] = useState<
+    Record<number, { verdict: "ok" | "check" | "reject"; note: string }>
+  >({});
 
   // reset when reopened
   useEffect(() => {
@@ -98,6 +105,8 @@ export default function MaterialImportDialog({
     setFilter("all");
     setReading(false);
     setImporting(false);
+    setAiChecking(false);
+    setAiVerdicts({});
   }, [open]);
 
   const inputs = useMemo(
@@ -132,7 +141,11 @@ export default function MaterialImportDialog({
   }, [inputs, materials, units, categories, autoCreate, excluded]);
 
   const summary = useMemo(() => summarize(analyzed), [analyzed]);
-  const toImport = analyzed.filter((row) => row.include && row.action !== "skip");
+  const aiRejectCount = analyzed.filter((r) => aiVerdicts[r.sourceRow]?.verdict === "reject").length;
+  const toImport = analyzed.filter(
+    (row) =>
+      row.include && row.action !== "skip" && aiVerdicts[row.sourceRow]?.verdict !== "reject",
+  );
   const updateCount = toImport.filter((row) => row.action === "update").length;
   const createCount = toImport.length - updateCount;
 
@@ -141,8 +154,12 @@ export default function MaterialImportDialog({
     if (filter === "ready") return analyzed.filter((r) => r.status === "ready" || r.status === "fixed");
     if (filter === "warnings") return analyzed.filter((r) => r.status === "warning");
     if (filter === "errors") return analyzed.filter((r) => r.status === "error");
+    if (filter === "ai-check")
+      return analyzed.filter((r) => aiVerdicts[r.sourceRow]?.verdict === "check");
+    if (filter === "ai-reject")
+      return analyzed.filter((r) => aiVerdicts[r.sourceRow]?.verdict === "reject");
     return analyzed.filter((r) => r.status === "duplicate");
-  }, [analyzed, filter]);
+  }, [analyzed, filter, aiVerdicts]);
 
   const handleFile = async (file: File) => {
     if (!isSupportedFile(file)) {
@@ -177,6 +194,47 @@ export default function MaterialImportDialog({
       else next.add(row.key);
       return next;
     });
+  };
+
+  /**
+   * Special AI checking: send the reviewed rows through an LLM audit that
+   * flags subtle typos, wrong units, implausible prices and junk entries that
+   * the rule engine can't catch. Verdicts render inline on each row.
+   */
+  const runAiCheck = async () => {
+    const candidates = analyzed
+      .filter((r) => r.raw.name && r.action !== "skip")
+      .map((r) => ({
+        index: r.sourceRow,
+        code: r.raw.code,
+        name: r.raw.name,
+        category: r.raw.category,
+        subCategory: r.raw.subCategory,
+        unit: r.raw.unit,
+        price: Number.isFinite(r.raw.pricePerUnit) ? r.raw.pricePerUnit : 0,
+      }));
+    if (candidates.length === 0) {
+      toast.error("Nothing to check — fix the error rows first.");
+      return;
+    }
+    setAiChecking(true);
+    try {
+      const verdicts = await aiCheckRows({ rows: candidates });
+      setAiVerdicts(
+        Object.fromEntries(verdicts.map((v) => [v.index, { verdict: v.verdict, note: v.note }])),
+      );
+      const rejects = verdicts.filter((v) => v.verdict === "reject").length;
+      const checks = verdicts.filter((v) => v.verdict === "check").length;
+      toast.success(
+        `AI check done — ${rejects} to reject, ${checks} to review, ${
+          verdicts.length - rejects - checks
+        } clean.`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "AI check failed.");
+    } finally {
+      setAiChecking(false);
+    }
   };
 
   const runImport = async () => {
@@ -305,6 +363,7 @@ export default function MaterialImportDialog({
                 "Units like “Kgs” or “Nos” are mapped to your master list.",
                 "Duplicate codes and names are flagged and merged.",
                 "Odd or changed prices are called out before saving.",
+                "AI check audits every row for typos, bad units & implausible prices.",
               ].map((line) => (
                 <li key={line} className="flex items-start gap-1.5">
                   <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-primary/70" />
@@ -350,6 +409,16 @@ export default function MaterialImportDialog({
                       ["warnings", "Check", summary.warnings],
                       ["errors", "Errors", summary.errors],
                       ["duplicates", "Duplicates", summary.duplicates],
+                      [
+                        "ai-check",
+                        "AI: review",
+                        analyzed.filter((r) => aiVerdicts[r.sourceRow]?.verdict === "check").length,
+                      ],
+                      [
+                        "ai-reject",
+                        "AI: reject",
+                        analyzed.filter((r) => aiVerdicts[r.sourceRow]?.verdict === "reject").length,
+                      ],
                     ] as [Filter, string, number][]
                   ).map(([id, label, count]) => (
                     <button
@@ -406,6 +475,7 @@ export default function MaterialImportDialog({
                 <ul className="divide-y divide-border/60">
                   {visible.map((row) => {
                     const style = STATUS_STYLE[row.status];
+                    const aiVerdict = aiVerdicts[row.sourceRow];
                     const priceError = row.issues.some(
                       (i) => i.level === "error" && i.field === "price",
                     );
@@ -417,7 +487,8 @@ export default function MaterialImportDialog({
                         key={row.key}
                         className={cn(
                           "flex items-start gap-3 px-5 py-2.5 transition-colors",
-                          excluded.has(row.key) && "opacity-55",
+                          (excluded.has(row.key) || aiVerdicts[row.sourceRow]?.verdict === "reject") &&
+                            "opacity-55",
                         )}
                       >
                         <input
@@ -478,6 +549,28 @@ export default function MaterialImportDialog({
                               </span>
                             ))}
                           </div>
+
+                          {aiVerdict && (
+                            <div
+                              className={cn(
+                                "mt-1.5 flex items-start gap-1.5 rounded-lg border px-2 py-1 text-[11px]",
+                                aiVerdict.verdict === "reject"
+                                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                                  : aiVerdict.verdict === "check"
+                                    ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-500"
+                                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+                              )}
+                            >
+                              {aiVerdict.verdict === "reject" ? (
+                                <ShieldAlert className="mt-0.5 size-3 shrink-0" />
+                              ) : (
+                                <Bot className="mt-0.5 size-3 shrink-0" />
+                              )}
+                              <span>
+                                <span className="font-semibold">AI:</span> {aiVerdict.note}
+                              </span>
+                            </div>
+                          )}
 
                           {(priceError || nameError) && (
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -600,6 +693,12 @@ export default function MaterialImportDialog({
                       {summary.duplicates} merged
                     </span>
                   )}
+                  {aiRejectCount > 0 && (
+                    <span className="flex items-center gap-1 text-destructive">
+                      <ShieldAlert className="size-3.5" />
+                      {aiRejectCount} AI-rejected
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -611,6 +710,26 @@ export default function MaterialImportDialog({
                   {toImport.length === 0 && "Select at least one row to import."}
                 </p>
                 <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg"
+                    disabled={aiChecking || importing}
+                    onClick={() => void runAiCheck()}
+                    title="Run an AI audit over these rows — flags typos, wrong units and implausible prices"
+                  >
+                    {aiChecking ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Bot className="size-3.5" />
+                    )}
+                    {aiChecking
+                      ? "AI checking…"
+                      : aiVerdicts && Object.keys(aiVerdicts).length > 0
+                        ? "Re-run AI check"
+                        : "AI check"}
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
