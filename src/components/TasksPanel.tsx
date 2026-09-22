@@ -9,6 +9,8 @@ import type { ActiveTaskView } from "@/components/TasksSidebar";
 import type { TaskDoc, Priority } from "@/lib/task-utils";
 import {
   RECURRENCE_LABEL,
+  ageDaysLabel,
+  formatCreatedLabel,
   formatDueLabel,
   isDueToday,
   isOverdue,
@@ -20,8 +22,10 @@ import {
   AlarmClock,
   CalendarDays,
   ChevronDown,
+  Clock,
   FileText,
   Flag,
+  History,
   Inbox,
   Loader2,
   Paperclip,
@@ -353,6 +357,27 @@ export default function TasksPanel({
                             )}
                           >
                             {task.text}
+                          </span>
+                          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                              title={`Created ${new Date(task._creationTime).toLocaleString()}`}
+                            >
+                              <Clock className="size-2.5" />
+                              {formatCreatedLabel(task._creationTime)}
+                            </span>
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                                task.isCompleted
+                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  : "bg-muted text-muted-foreground",
+                              )}
+                              title="Days since creation"
+                            >
+                              <History className="size-2.5" />
+                              {ageDaysLabel(task._creationTime, task.completedAt)}
+                            </span>
                           </span>
                           {(hasExtras || task.starred) && (
                             <span className="mt-1 flex flex-wrap items-center gap-1.5">

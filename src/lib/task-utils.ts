@@ -99,6 +99,32 @@ export function defaultDueLocal(): string {
   return toLocalInput(d);
 }
 
+/** Compact creation label: "Today 2:14 PM", "Yesterday", "Sep 18". */
+export function formatCreatedLabel(ts: number): string {
+  const d = new Date(ts);
+  if (isToday(ts)) {
+    return `Today ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  }
+  const diffDays = Math.round(
+    (startOfDay(new Date()).getTime() - startOfDay(d).getTime()) / 86_400_000,
+  );
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+/**
+ * Days since creation, e.g. "0d", "3d", "12d" — whole days elapsed between
+ * the creation moment and now (or completion, if the task is done).
+ */
+export function ageDaysLabel(createdAt: number, completedAt?: number): string {
+  const end = completedAt ?? Date.now();
+  const days = Math.max(
+    0,
+    Math.floor((end - createdAt) / 86_400_000),
+  );
+  return `${days}d`;
+}
+
 export function toLocalInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
