@@ -315,6 +315,7 @@ export default function TasksPanel({
                     task.priority !== undefined ||
                     task.recurrence !== undefined ||
                     task.description !== undefined ||
+                    task.sourcePageId !== undefined ||
                     parseAttachments(task.attachments).length > 0;
                   return (
                     <motion.li
