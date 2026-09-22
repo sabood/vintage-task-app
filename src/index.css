@@ -180,6 +180,33 @@
   cursor: pointer;
 }
 
+/* red flag glyph appended after the flagged text */
+.rich-editor mark.flag-mark .flag-indicator {
+  display: inline-block;
+  margin-left: 0.25em;
+  color: #dc2626;
+  font-size: 0.9em;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* task still open → soft amber tint */
+.rich-editor mark.flag-mark.flag-pending {
+  background-color: color-mix(in oklab, #f59e0b 30%, transparent);
+}
+
+/* task completed → green highlight, amber underline switches to green */
+.rich-editor mark.flag-mark.flag-done {
+  background-color: color-mix(in oklab, #10b981 32%, transparent);
+  border-bottom-color: #10b981;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, #10b981 60%, transparent);
+}
+.rich-editor mark.flag-mark.flag-done .flag-indicator {
+  color: #059669;
+}
+
 /* CHANGE VALUES FOR THEME — Modern: crisp neutrals with an indigo accent */
 :root {
   --radius: 0.75rem;

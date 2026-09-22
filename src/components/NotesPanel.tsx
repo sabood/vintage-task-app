@@ -41,6 +41,43 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+/**
+ * Decorate every flagged `<mark class="flag-mark">` in the editor body:
+ * append a red flag glyph after it, and (when the matching task is completed)
+ * tint the whole mark green. Matching is done on the flagged text — the same
+ * string that was stored on the task when it was created.
+ */
+function decorateFlagMarks(root: HTMLElement | null, tasks: Doc<"tasks">[]) {
+  if (!root) return;
+  const normalize = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+  const completed = new Set(
+    tasks.filter((t) => t.isCompleted).map((t) => normalize(t.text)),
+  );
+  const flagged = new Set(tasks.map((t) => normalize(t.text)));
+  root.querySelectorAll("mark.flag-mark").forEach((mark) => {
+    const el = mark as HTMLElement;
+    // Match on the flagged text only — exclude the ⚑ indicator glyph.
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(".flag-indicator").forEach((n) => n.remove());
+    const text = normalize(clone.textContent ?? "");
+    if (!text) return;
+    // (re)append the red flag indicator — always LAST inside the mark so it
+    // survives caret moves, and skipped while the user is selecting inside.
+    let flag = el.querySelector<HTMLElement>(":scope > span.flag-indicator");
+    if (!flag) {
+      flag = document.createElement("span");
+      flag.className = "flag-indicator";
+      flag.contentEditable = "false";
+      flag.textContent = "⚑";
+      el.appendChild(flag);
+    } else if (el.lastChild !== flag) {
+      el.appendChild(flag);
+    }
+    el.classList.toggle("flag-done", completed.has(text));
+    el.classList.toggle("flag-pending", flagged.has(text) && !completed.has(text));
+  });
+}
+
 type PageId = Id<"notePages">;
 
 const ACCENT_CLASS: Record<NoteColor, string> = {
@@ -63,9 +100,11 @@ const ACCENT_CLASS: Record<NoteColor, string> = {
 function PageCanvas({
   page,
   onFlagTask,
+  tasks,
 }: {
   page: Doc<"notePages">;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
+  tasks: Doc<"tasks">[];
 }) {
   const updatePage = useMutation(api.notebooks.updatePage);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +168,12 @@ function PageCanvas({
     scheduleSave({ body: html });
   };
 
+  // Keep flag decorations (⚑ indicator + completed green tint) in sync with
+  // the note body and the live task list.
+  useEffect(() => {
+    decorateFlagMarks(editorRef.current, tasks);
+  }, [body, tasks]);
+
   const applyFormat = (cmd: FormatCmd, arg?: string) => {
     formatSelection(cmd, arg);
     setTimeout(() => {
@@ -178,6 +223,7 @@ function PageCanvas({
           // couldn't apply the visual mark — the task was still created
         }
         if (editorRef.current) {
+          decorateFlagMarks(editorRef.current, tasks);
           handleBodyChange(editorRef.current.innerHTML);
         }
       }
@@ -463,11 +509,13 @@ export default function NotesPanel({
   pagesLoading,
   onNewPage,
   onFlagTask,
+  tasks,
 }: {
   activePage: Doc<"notePages"> | null;
   pagesLoading: boolean;
   onNewPage: () => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
+  tasks: Doc<"tasks">[];
 }) {
   if (pagesLoading && !activePage) {
     return (
@@ -499,6 +547,7 @@ export default function NotesPanel({
       key={activePage._id}
       page={activePage}
       onFlagTask={onFlagTask}
+      tasks={tasks}
     />
   );
 }

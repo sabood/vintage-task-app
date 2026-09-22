@@ -736,6 +736,7 @@ export default function Dashboard() {
               pagesLoading={pages === undefined}
               onNewPage={() => handleNewPage()}
               onFlagTask={handleFlagTask}
+              tasks={allTasks ?? []}
             />
           )}
         </main>
