@@ -34,15 +34,21 @@ import {
   type SectionKey,
 } from "@/lib/permissions";
 import {
+  Building2,
   Calculator,
+  Check,
   CheckSquare,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
+  KeyRound,
   Loader2,
   Mail,
   NotebookPen,
   Pencil,
+  Power,
+  RefreshCw,
   Settings as SettingsIcon,
   ShieldCheck,
   SlidersHorizontal,
@@ -53,8 +59,8 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type Role = "super" | "admin" | "user" | "member";
@@ -93,6 +99,45 @@ type PendingInvite = {
   customRoleId?: Id<"customRoles">;
   createdAt: number;
 };
+
+/** A sign-in provisioned by the super admin (Settings → Sign-ins). */
+type ProvisionedLogin = {
+  _id: Id<"credentials">;
+  userId: Id<"users">;
+  username: string;
+  displayName: string | null;
+  createdAt: number;
+  lastLoginAt: number | null;
+  disabled: boolean;
+  role: Role;
+  customRoleId: Id<"customRoles"> | null;
+};
+
+/** Readable, easy-to-dictate password for a freshly created login. */
+function makePassword(): string {
+  const words = [
+    "slate",
+    "ember",
+    "cedar",
+    "river",
+    "north",
+    "maple",
+    "delta",
+    "quartz",
+  ];
+  const pick = () => words[Math.floor(Math.random() * words.length)];
+  return `${pick()}-${pick()}-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+function formatWhen(ts: number | null): string {
+  if (ts === null) return "Never signed in";
+  return new Date(ts).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 const ROLE_META: Record<Role, { label: string; chip: string; blurb: string }> = {
   super: {
@@ -332,6 +377,15 @@ export default function SettingsPanel() {
   const pendingInvites = useQuery(api.settings.listPendingInvites);
   const currentUser = useQuery(api.users.currentUser);
 
+  // organisation + provisioned sign-ins
+  const organisation = useQuery(api.accounts.getOrganisation);
+  const logins = useQuery(api.accounts.listLogins);
+  const createOrganisation = useMutation(api.accounts.createOrganisation);
+  const createUserLogin = useAction(api.accounts.createUserLogin);
+  const setLoginPassword = useAction(api.accounts.setLoginPassword);
+  const setLoginDisabledM = useAction(api.accounts.setLoginDisabled);
+  const deleteLoginM = useAction(api.accounts.deleteLogin);
+
   const inviteMember = useMutation(api.settings.inviteMember);
   const setMemberRole = useMutation(api.settings.setMemberRole);
   const setMemberCustomRole = useMutation(api.settings.setMemberCustomRole);
@@ -349,12 +403,35 @@ export default function SettingsPanel() {
   const deleteCustomRole = useMutation(api.settings.deleteCustomRole);
 
   const [busy, setBusy] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState("");
   const [addRole, setAddRole] = useState<AssignableRole>("user");
   const [addCustomRoleId, setAddCustomRoleId] = useState<Id<"customRoles"> | null>(null);
   const [nameOpen, setNameOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+
+  // organisation dialog
+  const [orgOpen, setOrgOpen] = useState(false);
+  const [orgName, setOrgName] = useState("");
+  // "create user" (username + password) dialog
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newPersonName, setNewPersonName] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState(makePassword());
+  const [revealPassword, setRevealPassword] = useState(true);
+  const [inviteMode, setInviteMode] = useState(false);
+  const [handedOver, setHandedOver] = useState<{
+    username: string;
+    password: string;
+  } | null>(null);
+
+  // reset-password dialog
+  const [pwLogin, setPwLogin] = useState<ProvisionedLogin | null>(null);
+  const [pwDraft, setPwDraft] = useState("");
+  const [pwResult, setPwResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (organisation?.name) setOrgName(organisation.name);
+  }, [organisation?.name]);
 
   // role editor dialog state (create + edit share one dialog)
   const [roleEditorOpen, setRoleEditorOpen] = useState(false);
@@ -398,6 +475,121 @@ export default function SettingsPanel() {
     setAddCustomRoleId(null);
   };
 
+  // ── organisation + sign-ins ────────────────────────────────────────────
+
+  const loginFor = (userId: Id<"users">) =>
+    (logins ?? []).find((l) => l.userId === userId);
+
+  const copyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error("Couldn't copy — please select and copy it manually.");
+    }
+  };
+
+  const resetCreateDialog = () => {
+    setNewPersonName("");
+    setNewUsername("");
+    setNewPassword(makePassword());
+    setRevealPassword(true);
+    setAddRole("user");
+    setAddCustomRoleId(null);
+    setInviteMode(false);
+    resetAddDialog();
+  };
+
+  const handleCreateOrganisation = async () => {
+    setBusy(true);
+    try {
+      await createOrganisation({ name: orgName });
+      toast.success("Organisation saved — now create logins for your team.");
+      setOrgOpen(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't save the organisation.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreateLogin = async () => {
+    setBusy(true);
+    try {
+      const result = await createUserLogin({
+        username: newUsername,
+        password: newPassword,
+        name: newPersonName.trim() || undefined,
+        role: addRole,
+        customRoleId: addCustomRoleId ?? undefined,
+      });
+      setCreateOpen(false);
+      setHandedOver({ username: result.username, password: newPassword });
+      toast.success(`Login \u201c${result.username}\u201d created.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't create the login.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (pwLogin === null) return;
+    setBusy(true);
+    try {
+      await setLoginPassword({ credentialsId: pwLogin._id, password: pwDraft });
+      setPwResult(pwDraft);
+      toast.success(`New password set for \u201c${pwLogin.username}\u201d.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't change the password.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleDisabled = async (login: ProvisionedLogin) => {
+    try {
+      await setLoginDisabledM({
+        credentialsId: login._id,
+        disabled: !login.disabled,
+      });
+      toast.success(
+        login.disabled
+          ? `\u201c${login.username}\u201d can sign in again.`
+          : `\u201c${login.username}\u201d can no longer sign in.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't update the login.",
+      );
+    }
+  };
+
+  const handleDeleteLogin = async (login: ProvisionedLogin) => {
+    const ok = await confirm({
+      title: `Delete the login \u201c${login.username}\u201d?`,
+      message:
+        "They lose access immediately and the username is freed up. Everything they worked on stays with the organisation.",
+      confirmLabel: "Delete login",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteLoginM({ credentialsId: login._id });
+      toast.success("Login deleted.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't delete the login.",
+      );
+    }
+  };
+
   const submitInvite = async () => {
     const email = addEmail.trim();
     if (!email || !email.includes("@")) {
@@ -418,7 +610,7 @@ export default function SettingsPanel() {
       } else {
         toast.success(`${email} added as ${ROLE_META[addRole].label}.`);
       }
-      setAddOpen(false);
+      setCreateOpen(false);
       resetAddDialog();
     } catch (error) {
       toast.error(
@@ -605,15 +797,22 @@ export default function SettingsPanel() {
             variant="outline"
             size="sm"
             onClick={() => {
-              setNameDraft("");
-              setNameOpen(true);
+              setOrgName(organisation?.name ?? "");
+              setOrgOpen(true);
             }}
           >
-            Workspace name
+            <Building2 className="size-4" />
+            {organisation?.createdAt ? "Organisation" : "Create organisation"}
           </Button>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              resetCreateDialog();
+              setCreateOpen(true);
+            }}
+          >
             <UserPlus className="size-4" />
-            Add user
+            Create user
           </Button>
         </div>
       </div>
@@ -642,8 +841,80 @@ export default function SettingsPanel() {
         </div>
       </div>
 
+      {/* organisation */}
+      <section
+        id="settings-organisation"
+        className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
+        <header className="flex flex-wrap items-center gap-2 border-b px-5 py-3.5">
+          <Building2 className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Organisation</h2>
+          {organisation?.code && (
+            <Badge variant="secondary" className="ml-auto rounded-full font-mono">
+              {organisation.code}
+            </Badge>
+          )}
+        </header>
+        <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              Organisation name
+            </p>
+            <p className="mt-1 truncate text-sm font-medium">
+              {organisation?.name ?? "Not created yet"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {organisation?.createdAt
+                ? `Created ${new Date(organisation.createdAt).toLocaleDateString()}`
+                : "Name your organisation, then create a login for every person who needs access."}
+            </p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              Your own login
+            </p>
+            {organisation?.myUsername ? (
+              <>
+                <p className="mt-1 truncate font-mono text-sm">
+                  {organisation.myUsername}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatWhen(organisation.myLastLoginAt ?? null)}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                You signed in with an email code, so you don't have a username
+                yet. Create one for yourself with "Create user" if you'd rather
+                sign in with a password.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed bg-muted/30 px-3 py-2.5 sm:col-span-2">
+            <p className="text-xs text-muted-foreground">
+              Give your team the app address, then the username and password you
+              created for them.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto shrink-0"
+              onClick={() =>
+                void copyText(`${window.location.origin}/auth`, "Sign-in link")
+              }
+            >
+              <Copy className="size-3.5" />
+              Copy sign-in link
+            </Button>
+          </div>
+        </div>
+      </section>
+
       {/* member list */}
-      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <section
+        id="settings-people"
+        className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
         <header className="flex items-center gap-2 border-b px-5 py-3.5">
           <Users className="size-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold">Users &amp; roles</h2>
@@ -670,8 +941,21 @@ export default function SettingsPanel() {
                   <p className="truncate text-sm font-medium">
                     {m.name ?? m.email ?? "User"}
                   </p>
-                  {m.email && (
+                  {m.email && !loginFor(m.userId) && (
                     <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                  )}
+                  {loginFor(m.userId) && (
+                    <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground/80">
+                      <KeyRound className="size-3 shrink-0" />
+                      <span className="truncate font-mono">
+                        {loginFor(m.userId)?.username}
+                      </span>
+                      {loginFor(m.userId)?.disabled && (
+                        <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+                          switched off
+                        </span>
+                      )}
+                    </p>
                   )}
                   {!m.isSuper && (
                     <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
@@ -761,6 +1045,57 @@ export default function SettingsPanel() {
 
                 {/* actions */}
                 <div className="flex items-center gap-1">
+                  {loginFor(m.userId) && !m.isSuper && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <KeyRound className="size-3.5" />
+                          Login
+                          <ChevronDown className="size-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel className="font-mono text-xs">
+                          @{loginFor(m.userId)?.username}
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            const login = loginFor(m.userId);
+                            if (!login) return;
+                            setPwLogin(login);
+                            setPwDraft(makePassword());
+                            setPwResult(null);
+                          }}
+                        >
+                          <RefreshCw className="size-3.5" />
+                          Reset password
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            const login = loginFor(m.userId);
+                            if (login) void handleToggleDisabled(login);
+                          }}
+                        >
+                          <Power className="size-3.5" />
+                          {loginFor(m.userId)?.disabled
+                            ? "Allow sign-in again"
+                            : "Switch off sign-in"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => {
+                            const login = loginFor(m.userId);
+                            if (login) void handleDeleteLogin(login);
+                          }}
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete login
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   {!m.isSuper && (
                     <Button
                       variant="outline"
@@ -789,7 +1124,10 @@ export default function SettingsPanel() {
       </section>
 
       {/* custom roles manager */}
-      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <section
+        id="settings-roles"
+        className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
         <header className="flex items-center gap-2 border-b px-5 py-3.5">
           <Tags className="size-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold">Roles</h2>
@@ -892,7 +1230,10 @@ export default function SettingsPanel() {
       )}
 
       {/* shared master data — the single home for units & categories */}
-      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <section
+        id="settings-catalog"
+        className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
         <header className="flex flex-wrap items-center gap-2 border-b px-5 py-3.5">
           <Tag className="size-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold">Units &amp; categories</h2>
@@ -917,33 +1258,113 @@ export default function SettingsPanel() {
         layer on top of the assigned role).
       </p>
 
-      {/* add-user dialog */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-md">
+      {/* create-user dialog: username + password, or an email invite */}
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) resetCreateDialog();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="size-4 text-primary" />
-              Add a user
+              {inviteMode ? "Invite by email" : "Create a user"}
             </DialogTitle>
             <DialogDescription>
-              Add a person by email, then pick their role. Fine-tune their
-              detailed permissions afterwards with the Permissions button.
+              {inviteMode
+                ? "They join automatically the first time they sign in with this email address."
+                : "Set the username and password yourself, then hand them over. You'll get the details to share as soon as you save."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="add-user-email">Email</Label>
-              <Input
-                id="add-user-email"
-                type="email"
-                placeholder="name@company.com"
-                value={addEmail}
-                onChange={(e) => setAddEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void submitInvite()}
-                autoFocus
-              />
-            </div>
+            {inviteMode ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="add-user-email">Email</Label>
+                <Input
+                  id="add-user-email"
+                  type="email"
+                  placeholder="name@company.com"
+                  value={addEmail}
+                  onChange={(e) => setAddEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void submitInvite()}
+                  autoFocus
+                />
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-person-name">Full name</Label>
+                  <Input
+                    id="new-person-name"
+                    placeholder="e.g. Ravi Kumar"
+                    value={newPersonName}
+                    onChange={(e) => setNewPersonName(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-username">Username</Label>
+                  <Input
+                    id="new-username"
+                    placeholder="e.g. ravi"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className="font-mono"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Letters, numbers and . _ - @ — at least 3 characters.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-password">Password</Label>
+                  <div className="flex gap-1.5">
+                    <Input
+                      id="new-password"
+                      type={revealPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="font-mono"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title={revealPassword ? "Hide" : "Show"}
+                      onClick={() => setRevealPassword((v) => !v)}
+                    >
+                      {revealPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Generate a new password"
+                      onClick={() => {
+                        setNewPassword(makePassword());
+                        setRevealPassword(true);
+                      }}
+                    >
+                      <RefreshCw className="size-4" />
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    At least 8 characters. Read it out to them, or copy it from
+                    the next screen.
+                  </p>
+                </div>
+              </>
+            )}
 
             <div className="space-y-1.5">
               <Label>Role</Label>
@@ -1007,13 +1428,273 @@ export default function SettingsPanel() {
             </div>
           </div>
 
+          <div className="rounded-xl border border-dashed bg-muted/30 px-3 py-2.5">
+            <p className="text-[11px] text-muted-foreground">
+              {inviteMode
+                ? "Prefer to set their username and password yourself?"
+                : "Would they rather sign in with an emailed code?"}
+            </p>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => {
+                setInviteMode((v) => !v);
+                resetAddDialog();
+              }}
+            >
+              {inviteMode
+                ? "Set a username and password instead"
+                : "Invite by email instead"}
+            </Button>
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void submitInvite()} disabled={busy}>
+            <Button
+              onClick={() => void (inviteMode ? submitInvite() : handleCreateLogin())}
+              disabled={
+                busy ||
+                (inviteMode
+                  ? addEmail.trim().length === 0
+                  : newUsername.trim().length === 0 ||
+                    newPassword.length < 8)
+              }
+            >
               {busy && <Loader2 className="size-4 animate-spin" />}
-              Add user
+              {inviteMode ? "Send invite" : "Create login"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* credentials hand-over dialog */}
+      <Dialog
+        open={handedOver !== null}
+        onOpenChange={(open) => !open && setHandedOver(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600">
+                <Check className="size-4" />
+              </span>
+              Login created
+            </DialogTitle>
+            <DialogDescription>
+              Give these to the person. The password is shown here only — reset
+              it from the Login menu if you lose it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2.5 rounded-xl border bg-muted/30 p-3">
+            <div className="flex items-center gap-2">
+              <span className="w-20 shrink-0 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Username
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-sm">
+                {handedOver?.username}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-20 shrink-0 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Password
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-sm">
+                {handedOver?.password}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-20 shrink-0 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Sign in at
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                {window.location.origin}/auth
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                void copyText(
+                  `Username: ${handedOver?.username}\nPassword: ${handedOver?.password}\nSign in at ${window.location.origin}/auth`,
+                  "Sign-in details",
+                )
+              }
+            >
+              <Copy className="size-4" />
+              Copy details
+            </Button>
+            <Button onClick={() => setHandedOver(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* reset-password dialog */}
+      <Dialog
+        open={pwLogin !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPwLogin(null);
+            setPwResult(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="size-4 text-primary" />
+              Reset password
+            </DialogTitle>
+            <DialogDescription>
+              Set a new password for <span className="font-mono">@{pwLogin?.username}</span>.
+              Their current password stops working straight away.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pwResult !== null ? (
+            <div className="space-y-2.5 rounded-xl border bg-muted/30 p-3">
+              <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                New password
+              </p>
+              <p className="font-mono text-sm">{pwResult}</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-password">New password</Label>
+              <div className="flex gap-1.5">
+                <Input
+                  id="reset-password"
+                  className="font-mono"
+                  value={pwDraft}
+                  onChange={(e) => setPwDraft(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Generate a new password"
+                  onClick={() => setPwDraft(makePassword())}
+                >
+                  <RefreshCw className="size-4" />
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                At least 8 characters.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            {pwResult !== null ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void copyText(
+                      `Username: ${pwLogin?.username}\nPassword: ${pwResult}`,
+                      "Sign-in details",
+                    )
+                  }
+                >
+                  <Copy className="size-4" />
+                  Copy details
+                </Button>
+                <Button
+                  onClick={() => {
+                    setPwLogin(null);
+                    setPwResult(null);
+                  }}
+                >
+                  Done
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setPwLogin(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => void handleSetPassword()}
+                  disabled={busy || pwDraft.length < 8}
+                >
+                  {busy && <Loader2 className="size-4 animate-spin" />}
+                  Set password
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* organisation dialog */}
+      <Dialog open={orgOpen} onOpenChange={setOrgOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="size-4 text-primary" />
+              {organisation?.createdAt
+                ? "Organisation details"
+                : "Create your organisation"}
+            </DialogTitle>
+            <DialogDescription>
+              This is the name your team sees. Everything they create — tasks,
+              notes, materials, products — belongs to the organisation and is
+              shared with the people you give access to.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="org-name">Organisation name</Label>
+              <Input
+                id="org-name"
+                placeholder="e.g. Northwind Joinery"
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && void handleCreateOrganisation()
+                }
+                autoFocus
+              />
+            </div>
+            {organisation?.code && (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed bg-muted/30 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                    Organisation code
+                  </p>
+                  <p className="font-mono text-sm">{organisation.code}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    void copyText(organisation.code ?? "", "Organisation code")
+                  }
+                >
+                  <Copy className="size-3.5" />
+                  Copy
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOrgOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleCreateOrganisation()}
+              disabled={busy || orgName.trim().length === 0}
+            >
+              {busy && <Loader2 className="size-4 animate-spin" />}
+              {organisation?.createdAt ? "Save" : "Create organisation"}
             </Button>
           </DialogFooter>
         </DialogContent>

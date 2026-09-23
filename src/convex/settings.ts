@@ -44,7 +44,14 @@ async function getSettings(
   userId: Id<"users">,
 ): Promise<Doc<"settings"> | null> {
   const all = await ctx.db.query("settings").collect();
-  return all.find((s: Doc<"settings">) => s.ownerId === userId) ?? null;
+  // The super admin owns the row; everyone else is listed in `members`.
+  const owned = all.find((s: Doc<"settings">) => s.ownerId === userId);
+  if (owned !== undefined) return owned;
+  return (
+    all.find((s: Doc<"settings">) =>
+      s.members.some((m) => m.userId === userId),
+    ) ?? null
+  );
 }
 
 /**

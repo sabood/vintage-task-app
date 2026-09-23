@@ -1,5 +1,5 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import { scopeUserId } from "./org";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
@@ -48,7 +48,7 @@ async function nextCode(
 export const listUnits = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const units = await ctx.db
       .query("costUnits")
@@ -62,7 +62,7 @@ export const listUnits = query({
 export const addUnit = mutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
     if (clean.length === 0) throw new Error("Give the unit a name.");
@@ -75,7 +75,7 @@ export const addUnit = mutation({
 export const renameUnit = mutation({
   args: { id: v.id("costUnits"), name: v.string() },
   handler: async (ctx, { id, name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const unit = await ctx.db.get(id);
     if (unit === null) throw new Error("That unit no longer exists.");
@@ -91,7 +91,7 @@ export const renameUnit = mutation({
 export const removeUnit = mutation({
   args: { id: v.id("costUnits") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const unit = await ctx.db.get(id);
     if (unit === null) throw new Error("That unit no longer exists.");
@@ -106,7 +106,7 @@ export const removeUnit = mutation({
 export const listCategories = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const cats = await ctx.db
       .query("costCategories")
@@ -120,7 +120,7 @@ export const listCategories = query({
 export const addCategory = mutation({
   args: { name: v.string(), parentId: v.optional(v.id("costCategories")) },
   handler: async (ctx, { name, parentId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
     if (clean.length === 0) throw new Error("Give the category a name.");
@@ -142,7 +142,7 @@ export const addCategory = mutation({
 export const renameCategory = mutation({
   args: { id: v.id("costCategories"), name: v.string() },
   handler: async (ctx, { id, name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const cat = await ctx.db.get(id);
     if (cat === null) throw new Error("That category no longer exists.");
@@ -158,7 +158,7 @@ export const renameCategory = mutation({
 export const removeCategory = mutation({
   args: { id: v.id("costCategories") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const cat = await ctx.db.get(id);
     if (cat === null) throw new Error("That category no longer exists.");
@@ -180,7 +180,7 @@ export const removeCategory = mutation({
 export const listMaterials = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const materials = await ctx.db
       .query("rawMaterials")
@@ -201,7 +201,7 @@ export const addMaterial = mutation({
     pricePerUnit: v.number(),
   },
   handler: async (ctx, { code, name, category, subCategory, unit, pricePerUnit }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
     if (clean.length === 0) throw new Error("Give the material a name.");
@@ -234,7 +234,7 @@ export const updateMaterial = mutation({
     pricePerUnit: v.optional(v.number()),
   },
   handler: async (ctx, { id, ...patch }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const material = await ctx.db.get(id);
     if (material === null) throw new Error("That material no longer exists.");
@@ -279,7 +279,7 @@ export const bulkImportMaterials = mutation({
     autoCreate: v.boolean(),
   },
   handler: async (ctx, { rows, mode, autoCreate }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     if (rows.length === 0) throw new Error("Nothing to import.");
 
@@ -444,7 +444,7 @@ export const bulkImportMaterials = mutation({
 export const removeMaterial = mutation({
   args: { id: v.id("rawMaterials") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const material = await ctx.db.get(id);
     if (material === null) throw new Error("That material no longer exists.");
@@ -459,7 +459,7 @@ export const removeMaterial = mutation({
 export const listSheets = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const sheets = await ctx.db
       .query("costingSheets")
@@ -473,7 +473,7 @@ export const listSheets = query({
 export const addSheet = mutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
     if (clean.length === 0) throw new Error("Give the sheet a name.");
@@ -491,7 +491,7 @@ export const addSheet = mutation({
 export const renameSheet = mutation({
   args: { id: v.id("costingSheets"), name: v.string() },
   handler: async (ctx, { id, name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const sheet = await ctx.db.get(id);
     if (sheet === null) throw new Error("That sheet no longer exists.");
@@ -510,7 +510,7 @@ export const updateSheet = mutation({
     markupPct: v.optional(v.number()),
   },
   handler: async (ctx, { id, currency, markupPct }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const sheet = await ctx.db.get(id);
     if (sheet === null) throw new Error("That sheet no longer exists.");
@@ -529,7 +529,7 @@ export const updateSheet = mutation({
 export const removeSheet = mutation({
   args: { id: v.id("costingSheets") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const sheet = await ctx.db.get(id);
     if (sheet === null) throw new Error("That sheet no longer exists.");
@@ -558,7 +558,7 @@ type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const listProjects = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const rows = await ctx.db
       .query("projects")
@@ -587,7 +587,7 @@ export const addProject = mutation({
     budget: v.optional(v.number()),
   },
   handler: async (ctx, opts) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const name = opts.name.trim();
     if (name.length === 0) throw new Error("Give the project a name.");
@@ -625,7 +625,7 @@ export const updateProject = mutation({
     budget: v.optional(v.number()),
   },
   handler: async (ctx, { id, ...patch }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const project = await ctx.db.get(id);
     if (project === null || project.ownerId !== userId)
@@ -659,7 +659,7 @@ export const updateProject = mutation({
 export const removeProject = mutation({
   args: { id: v.id("projects") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const project = await ctx.db.get(id);
     if (project === null) return;
@@ -674,7 +674,7 @@ export const removeProject = mutation({
 export const listFinishedGoods = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const fgs = await ctx.db
       .query("finishedGoods")
@@ -698,7 +698,7 @@ export const addFinishedGood = mutation({
     markupPct: v.optional(v.number()),
   },
   handler: async (ctx, opts) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const cleanProject = opts.projectName.trim();
     const cleanName = opts.name.trim();
@@ -750,7 +750,7 @@ export const updateFinishedGood = mutation({
     markupPct: v.optional(v.number()),
   },
   handler: async (ctx, { id, ...patch }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(id);
     if (fg === null) throw new Error("That product no longer exists.");
@@ -794,7 +794,7 @@ export const updateFinishedGood = mutation({
 export const removeFinishedGood = mutation({
   args: { id: v.id("finishedGoods") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(id);
     if (fg === null) throw new Error("That product no longer exists.");
@@ -819,7 +819,7 @@ export const setFgImage = mutation({
     size: v.optional(v.number()),
   },
   handler: async (ctx, { id, data, name, size }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(id);
     if (fg === null) throw new Error("That product no longer exists.");
@@ -835,7 +835,7 @@ export const setFgImage = mutation({
 export const clearFgImage = mutation({
   args: { id: v.id("finishedGoods") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(id);
     if (fg === null) throw new Error("That product no longer exists.");
@@ -850,7 +850,7 @@ export const clearFgImage = mutation({
 export const listAllItems = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const items = await ctx.db
       .query("costingItems")
@@ -864,7 +864,7 @@ export const listAllItems = query({
 export const listFgItems = query({
   args: { fgId: v.id("finishedGoods") },
   handler: async (ctx, { fgId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const fg = await ctx.db.get(fgId);
     if (fg === null || fg.ownerId !== userId) return [];
@@ -880,7 +880,7 @@ export const listFgItems = query({
 export const listItems = query({
   args: { sheetId: v.id("costingSheets") },
   handler: async (ctx, { sheetId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const sheet = await ctx.db.get(sheetId);
     if (sheet === null || sheet.ownerId !== userId) return [];
@@ -901,7 +901,7 @@ export const addItem = mutation({
     qty: v.number(),
   },
   handler: async (ctx, { sheetId, materialId, label, qty }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const sheet = await ctx.db.get(sheetId);
     if (sheet === null || sheet.ownerId !== userId)
@@ -948,7 +948,7 @@ export const addFgItem = mutation({
     unitPrice: v.optional(v.number()),
   },
   handler: async (ctx, { fgId, materialId, label, qty, unitPrice }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(fgId);
     if (fg === null || fg.ownerId !== userId)
@@ -1007,7 +1007,7 @@ export const updateItem = mutation({
     unitPrice: v.optional(v.number()),
   },
   handler: async (ctx, { id, ...patch }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const item = await ctx.db.get(id);
     if (item === null) throw new Error("That line no longer exists.");
@@ -1028,7 +1028,7 @@ export const updateItem = mutation({
 export const removeItem = mutation({
   args: { id: v.id("costingItems") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const item = await ctx.db.get(id);
     if (item === null) throw new Error("That line no longer exists.");
@@ -1045,7 +1045,7 @@ export const removeItem = mutation({
 export const mergeFgDuplicateItems = mutation({
   args: { fgId: v.id("finishedGoods") },
   handler: async (ctx, { fgId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const fg = await ctx.db.get(fgId);
     if (fg === null || fg.ownerId !== userId)

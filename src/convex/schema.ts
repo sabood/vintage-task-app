@@ -68,12 +68,33 @@ const teamMemberValidator = v.object({
   joinedAt: v.number(),
 });
 
-// workspace settings singleton: one row per workspace (ownerId = super user)
+// organisation settings singleton: one row per organisation (ownerId = super
+// admin). Everything the organisation owns is scoped to this owner id.
 const settings = defineTable({
-  ownerId: v.id("users"), // the super user who owns this workspace
-  workspaceName: v.optional(v.string()),
+  ownerId: v.id("users"), // the super admin who owns this organisation
+  workspaceName: v.optional(v.string()), // organisation name
+  /** Short code shown to users so they know where to sign in, e.g. "ORG-4F7K". */
+  orgCode: v.optional(v.string()),
+  orgCreatedAt: v.optional(v.number()),
   members: v.array(teamMemberValidator), // every user + role + restrictions
 }).index("by_owner", ["ownerId"]);
+
+// Sign-in credentials provisioned by the organisation's super admin. The auth
+// account itself lives in the Convex Auth tables; this row is the organisation
+// side of it (who created it, which org it belongs to, when it last signed in).
+const credentials = defineTable({
+  orgId: v.id("users"), // settings.ownerId — the organisation it belongs to
+  userId: v.id("users"), // the auth user row this login signs in as
+  username: v.string(), // lower-cased; unique across the deployment
+  displayName: v.optional(v.string()),
+  createdBy: v.id("users"),
+  createdAt: v.number(),
+  lastLoginAt: v.optional(v.number()),
+  disabled: v.optional(v.boolean()),
+})
+  .index("by_username", ["username"])
+  .index("by_org", ["orgId"])
+  .index("by_user", ["userId"]);
 
 // manually created roles (Settings → Roles)
 const customRoles = defineTable({
@@ -318,6 +339,7 @@ const schema = defineSchema(
     // add other tables here
 
     settings,
+    credentials,
     customRoles,
     pendingInvites,
   },

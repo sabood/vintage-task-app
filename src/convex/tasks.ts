@@ -1,5 +1,5 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import { scopeUserId } from "./org";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 
@@ -13,7 +13,7 @@ const MAX_ATTACHMENT_BYTES = 900_000; // ~900 KB per file (stored inline)
 export const listLists = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const lists = await ctx.db
       .query("taskLists")
@@ -27,7 +27,7 @@ export const listLists = query({
 export const listFolders = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const folders = await ctx.db
       .query("taskFolders")
@@ -41,7 +41,7 @@ export const listFolders = query({
 export const addFolder = mutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
     if (clean.length === 0) throw new Error("Give the folder a name.");
@@ -54,7 +54,7 @@ export const addFolder = mutation({
 export const renameFolder = mutation({
   args: { id: v.id("taskFolders"), name: v.string() },
   handler: async (ctx, { id, name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const folder = await ctx.db.get(id);
     if (folder === null) throw new Error("That folder no longer exists.");
@@ -69,7 +69,7 @@ export const renameFolder = mutation({
 export const removeFolder = mutation({
   args: { id: v.id("taskFolders") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const folder = await ctx.db.get(id);
     if (folder === null) throw new Error("That folder no longer exists.");
@@ -92,7 +92,7 @@ export const setListFolder = mutation({
     folderId: v.optional(v.id("taskFolders")),
   },
   handler: async (ctx, { id, folderId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const list = await ctx.db.get(id);
     if (list === null) throw new Error("That list no longer exists.");
@@ -110,7 +110,7 @@ export const setListFolder = mutation({
 export const addList = mutation({
   args: { name: v.string(), folderId: v.optional(v.id("taskFolders")) },
   handler: async (ctx, { name, folderId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const clean = name.trim();
     if (clean.length === 0) throw new Error("Give the list a name.");
@@ -128,7 +128,7 @@ export const addList = mutation({
 export const renameList = mutation({
   args: { id: v.id("taskLists"), name: v.string() },
   handler: async (ctx, { id, name }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const list = await ctx.db.get(id);
     if (list === null) throw new Error("That list no longer exists.");
@@ -143,7 +143,7 @@ export const renameList = mutation({
 export const removeList = mutation({
   args: { id: v.id("taskLists") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const list = await ctx.db.get(id);
     if (list === null) throw new Error("That list no longer exists.");
@@ -167,7 +167,7 @@ export const removeList = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) {
       return [];
     }
@@ -183,7 +183,7 @@ export const list = query({
 export const listSteps = query({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, { taskId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const task = await ctx.db.get(taskId);
     if (task === null || task.ownerId !== userId) return [];
@@ -210,7 +210,7 @@ export const add = mutation({
     recurrence: v.optional(v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"))),
   },
   handler: async (ctx, { text, listId, sourcePageId, ...extra }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) {
       throw new Error("Sign in to write in your ledger.");
     }
@@ -263,7 +263,7 @@ export const update = mutation({
     clearRecurrence: v.optional(v.boolean()),
   },
   handler: async (ctx, { id, clearDue, clearReminder, clearRecurrence, ...patch }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const task = await ctx.db.get(id);
     if (task === null) throw new Error("That entry is no longer in the ledger.");
@@ -310,7 +310,7 @@ export const addAttachment = mutation({
     data: v.string(), // data URL
   },
   handler: async (ctx, { id, name, type, size, data }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const task = await ctx.db.get(id);
     if (task === null) throw new Error("That entry is no longer in the ledger.");
@@ -326,7 +326,7 @@ export const addAttachment = mutation({
 export const removeAttachment = mutation({
   args: { id: v.id("tasks"), attachmentId: v.string() },
   handler: async (ctx, { id, attachmentId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const task = await ctx.db.get(id);
     if (task === null) throw new Error("That entry is no longer in the ledger.");
@@ -345,7 +345,7 @@ export const removeAttachment = mutation({
 export const addStep = mutation({
   args: { taskId: v.id("tasks"), text: v.string() },
   handler: async (ctx, { taskId, text }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const task = await ctx.db.get(taskId);
     if (task === null) throw new Error("That entry is no longer in the ledger.");
@@ -366,7 +366,7 @@ export const addStep = mutation({
 export const renameStep = mutation({
   args: { id: v.id("taskSteps"), text: v.string() },
   handler: async (ctx, { id, text }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const step = await ctx.db.get(id);
     if (step === null) throw new Error("That step no longer exists.");
@@ -381,7 +381,7 @@ export const renameStep = mutation({
 export const toggleStep = mutation({
   args: { id: v.id("taskSteps") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const step = await ctx.db.get(id);
     if (step === null) throw new Error("That step no longer exists.");
@@ -394,7 +394,7 @@ export const toggleStep = mutation({
 export const removeStep = mutation({
   args: { id: v.id("taskSteps") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const step = await ctx.db.get(id);
     if (step === null) throw new Error("That step no longer exists.");
@@ -422,7 +422,7 @@ function nextDue(base: number, recurrence: "daily" | "weekly" | "monthly"): numb
 export const toggle = mutation({
   args: { id: v.id("tasks") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) {
       throw new Error("Sign in first.");
     }
@@ -466,7 +466,7 @@ export const toggle = mutation({
 export const remove = mutation({
   args: { id: v.id("tasks") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const task = await ctx.db.get(id);
     if (task === null) throw new Error("That entry is no longer in the ledger.");

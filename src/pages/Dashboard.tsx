@@ -11,6 +11,7 @@ import CostingSidebar from "@/components/CostingSidebar";
 import type { CostingView } from "@/components/CostingSidebar";
 import CostingPanel from "@/components/CostingPanel";
 import SettingsPanel from "@/components/SettingsPanel";
+import SettingsSidebar from "@/components/SettingsSidebar";
 import { format } from "date-fns";
 import { Calculator, Check, CheckSquare, LogOut, NotebookPen, Settings } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
@@ -45,11 +46,13 @@ export default function Dashboard() {
   const myAccess = useQuery(api.settings.getMyAccess);
   const ensureWorkspace = useMutation(api.settings.ensureWorkspace);
   const claimPendingInvite = useMutation(api.settings.claimPendingInvite);
+  const touchLogin = useMutation(api.accounts.touchLogin);
   useEffect(() => {
-    // Bootstrap the workspace (super-user row) and claim any pending invite
-    // for this account once on sign-in.
+    // Bootstrap the organisation (super-admin row), claim any pending invite
+    // for this account, and stamp this sign-in.
     ensureWorkspace()
       .then(() => claimPendingInvite())
+      .then(() => touchLogin())
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -766,7 +769,9 @@ export default function Dashboard() {
 
         {/* section-aware explorer tree */}
         <div className="mt-4 border-t border-border/60 px-3 pt-3 pb-4">
-          {section === "costing" ? (
+          {section === "settings" ? (
+            <SettingsSidebar />
+          ) : section === "costing" ? (
             <CostingSidebar
               finishedGoods={finishedGoods ?? []}
               materials={materials ?? []}

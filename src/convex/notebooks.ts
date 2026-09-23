@@ -1,5 +1,5 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import { scopeUserId } from "./org";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
@@ -43,7 +43,7 @@ const MAX_BODY_LENGTH = 20000;
 export const listNotebooks = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const notebooks = await ctx.db
       .query("notebooks")
@@ -61,7 +61,7 @@ export const listNotebooks = query({
 export const ensureDefaultWorkbook = mutation({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const existing = await ctx.db
       .query("notebooks")
@@ -92,7 +92,7 @@ export const ensureDefaultWorkbook = mutation({
 export const addNotebook = mutation({
   args: { title: v.string() },
   handler: async (ctx, { title }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in to create a notebook.");
     const cleanTitle = title.trim();
     if (cleanTitle.length === 0) throw new Error("Give the notebook a title.");
@@ -106,7 +106,7 @@ export const addNotebook = mutation({
 export const renameNotebook = mutation({
   args: { id: v.id("notebooks"), title: v.string() },
   handler: async (ctx, { id, title }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const nb = await ctx.db.get(id);
     if (nb === null) throw new Error("That notebook no longer exists.");
@@ -122,7 +122,7 @@ export const renameNotebook = mutation({
 export const removeNotebook = mutation({
   args: { id: v.id("notebooks") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const nb = await ctx.db.get(id);
     if (nb === null) throw new Error("That notebook no longer exists.");
@@ -140,7 +140,7 @@ export const removeNotebook = mutation({
 export const listPages = query({
   args: { notebookId: v.id("notebooks") },
   handler: async (ctx, { notebookId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const nb = await ctx.db.get(notebookId);
     if (nb === null || nb.ownerId !== userId) return [];
@@ -159,7 +159,7 @@ export const listPages = query({
 export const listAllPages = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return [];
     const pages = await ctx.db
       .query("notePages")
@@ -200,7 +200,7 @@ export const countPagesByOwner = query({
 export const getPage = query({
   args: { id: v.id("notePages") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) return null;
     const page = await ctx.db.get(id);
     if (page === null || page.ownerId !== userId) return null;
@@ -216,7 +216,7 @@ export const addPage = mutation({
     parentId: v.optional(v.id("notePages")),
   },
   handler: async (ctx, { notebookId, title, parentId }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in to create a page.");
     const nb = await ctx.db.get(notebookId);
     if (nb === null) throw new Error("That notebook no longer exists.");
@@ -248,7 +248,7 @@ export const addPage = mutation({
 export const removePage = mutation({
   args: { id: v.id("notePages") },
   handler: async (ctx, { id }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const page = await ctx.db.get(id);
     if (page === null) throw new Error("That page no longer exists.");
@@ -303,7 +303,7 @@ export const updatePage = mutation({
     inkColor: v.optional(noteInkValidator),
   },
   handler: async (ctx, { id, ...patch }) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await scopeUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const page = await ctx.db.get(id);
     if (page === null) throw new Error("That page no longer exists.");
