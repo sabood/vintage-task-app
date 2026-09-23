@@ -82,12 +82,19 @@ export default function TaskDetail({
   lists,
   canEdit = true,
   canDelete = true,
+  canCreateSteps = true,
+  canEditSteps = true,
+  canDeleteSteps = true,
   onClose,
 }: {
   task: TaskDoc;
   lists: { _id: Id<"taskLists">; name: string }[];
   canEdit?: boolean;
   canDelete?: boolean;
+  /** Subtasks & attachments item permissions (finer than canEdit/canDelete). */
+  canCreateSteps?: boolean;
+  canEditSteps?: boolean;
+  canDeleteSteps?: boolean;
   onClose: () => void;
 }) {
   const toggleTask = useMutation(api.tasks.toggle);
@@ -192,6 +199,10 @@ export default function TaskDetail({
 
   const handleAddStep = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateSteps) {
+      toast.error("Adding steps is restricted for your role.");
+      return;
+    }
     const text = stepDraft.trim();
     if (!text) return;
     setStepDraft("");
@@ -206,6 +217,10 @@ export default function TaskDetail({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (!canCreateSteps) {
+      toast.error("Attaching files is restricted for your role.");
+      return;
+    }
     if (file.size > 900_000) {
       toast.error("Files up to ~900 KB can be attached.");
       return;
@@ -495,7 +510,12 @@ export default function TaskDetail({
                     <li key={s._id} className="group/st flex items-center gap-2">
                       <Checkbox
                         checked={s.isCompleted}
-                        onCheckedChange={() => void toggleStepM({ id: s._id })}
+                        disabled={!canEditSteps}
+                        onCheckedChange={() =>
+                          canEditSteps
+                            ? void toggleStepM({ id: s._id })
+                            : toast.error("Editing steps is restricted for your role.")
+                        }
                         className="size-4 rounded border-border data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground [&_svg]:size-2.5"
                       />
                       <span
@@ -506,29 +526,37 @@ export default function TaskDetail({
                       >
                         {s.text}
                       </span>
-                      <button
-                        type="button"
-                        aria-label="Delete step"
-                        className="hidden size-5 shrink-0 place-items-center rounded text-muted-foreground hover:text-destructive group-hover/st:grid"
-                        onClick={() => void removeStepM({ id: s._id })}
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
+                      {canDeleteSteps && (
+                        <button
+                          type="button"
+                          aria-label="Delete step"
+                          className="hidden size-5 shrink-0 place-items-center rounded text-muted-foreground hover:text-destructive group-hover/st:grid"
+                          onClick={() => void removeStepM({ id: s._id })}
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
-              <form onSubmit={handleAddStep} className="flex gap-1.5">
-                <Input
-                  value={stepDraft}
-                  onChange={(e) => setStepDraft(e.target.value)}
-                  placeholder="Break it into a step…"
-                  className="h-8 rounded-lg text-sm"
-                />
-                <Button type="submit" size="icon" variant="ghost" className="size-8 rounded-lg">
-                  <Plus className="size-3.5" />
-                </Button>
-              </form>
+              {canCreateSteps ? (
+                <form onSubmit={handleAddStep} className="flex gap-1.5">
+                  <Input
+                    value={stepDraft}
+                    onChange={(e) => setStepDraft(e.target.value)}
+                    placeholder="Break it into a step…"
+                    className="h-8 rounded-lg text-sm"
+                  />
+                  <Button type="submit" size="icon" variant="ghost" className="size-8 rounded-lg">
+                    <Plus className="size-3.5" />
+                  </Button>
+                </form>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Adding steps is restricted for your role.
+                </p>
+              )}
             </Row>
 
             {/* attachments */}
@@ -552,18 +580,20 @@ export default function TaskDetail({
                       <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
                         {a.size < 1024 ? `${a.size} B` : `${Math.round(a.size / 1024)} KB`}
                       </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${a.name}`}
-                        className="hidden size-5 shrink-0 place-items-center rounded text-muted-foreground hover:text-destructive group-hover/at:grid"
-                        onClick={() =>
-                          void removeAttachment({ id: task._id, attachmentId: a.id }).catch(() =>
-                            toast.error("Couldn't remove the file."),
-                          )
-                        }
-                      >
-                        <X className="size-3" />
-                      </button>
+                      {canDeleteSteps && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${a.name}`}
+                          className="hidden size-5 shrink-0 place-items-center rounded text-muted-foreground hover:text-destructive group-hover/at:grid"
+                          onClick={() =>
+                            void removeAttachment({ id: task._id, attachmentId: a.id }).catch(() =>
+                              toast.error("Couldn't remove the file."),
+                            )
+                          }
+                        >
+                          <X className="size-3" />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -574,21 +604,23 @@ export default function TaskDetail({
                 className="hidden"
                 onChange={(e) => void handleFile(e)}
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 rounded-lg text-xs"
-                disabled={uploading}
-                onClick={() => fileInput.current?.click()}
-              >
-                {uploading ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Paperclip className="size-3.5" />
-                )}
-                Attach photo, PDF, or file
-              </Button>
+              {canCreateSteps && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-lg text-xs"
+                  disabled={uploading}
+                  onClick={() => fileInput.current?.click()}
+                >
+                  {uploading ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Paperclip className="size-3.5" />
+                  )}
+                  Attach photo, PDF, or file
+                </Button>
+              )}
             </Row>
           </div>
         </div>

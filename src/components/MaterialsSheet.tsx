@@ -44,13 +44,17 @@ export default function MaterialsSheet({
   canEdit = true,
   canDelete = true,
   canImportExport = true,
+  canImport = true,
 }: {
   materials: MaterialDoc[];
   loading: boolean;
   canCreate?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  /** See the Excel menu (import + exports). */
   canImportExport?: boolean;
+  /** Actually import rows from a spreadsheet. */
+  canImport?: boolean;
 }) {
   const addMaterial = useMutation(api.costing.addMaterial);
   const updateMaterial = useMutation(api.costing.updateMaterial);
@@ -175,6 +179,11 @@ export default function MaterialsSheet({
   }, [materials, search, categoryFilter]);
 
   const handleAdd = async (e: React.FormEvent) => {
+    if (!canCreate) {
+      e.preventDefault();
+      toast.error("Adding raw materials is restricted for your role.");
+      return;
+    }
     e.preventDefault();
     const clean = name.trim();
     const priceNum = Number(price);
@@ -383,16 +392,20 @@ export default function MaterialsSheet({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
-                <DropdownMenuItem onClick={() => setImportOpen(true)}>
-                  <Sparkles className="size-3.5" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium">Import from Excel</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      Bulk entry with a full check report
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                {canImport && (
+                  <>
+                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                      <Sparkles className="size-3.5" />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium">Import from Excel</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Bulk entry with a full check report
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem
                   onClick={() =>
                     void exportMaterials(

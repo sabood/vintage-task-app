@@ -56,6 +56,9 @@ export default function TasksPanel({
   canCreate = true,
   canEdit = true,
   canDelete = true,
+  canCreateSteps = true,
+  canEditSteps = true,
+  canDeleteSteps = true,
 }: {
   activeView: ActiveTaskView;
   lists: { _id: ListId; name: string }[];
@@ -63,6 +66,10 @@ export default function TasksPanel({
   canCreate?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  /** Subtasks & attachments item permissions. */
+  canCreateSteps?: boolean;
+  canEditSteps?: boolean;
+  canDeleteSteps?: boolean;
 }) {
   const allTasks = useQuery(api.tasks.list);
   const allPages = useQuery(api.notebooks.listAllPages);
@@ -513,6 +520,9 @@ export default function TasksPanel({
                 lists={lists}
                 canEdit={canEdit}
                 canDelete={canDelete}
+                canCreateSteps={canCreateSteps}
+                canEditSteps={canEditSteps}
+                canDeleteSteps={canDeleteSteps}
                 onClose={() => setOpenTaskId(null)}
               />
             )}

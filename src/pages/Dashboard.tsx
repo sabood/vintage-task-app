@@ -937,8 +937,12 @@ export default function Dashboard() {
               canEdit={canDoItem("products", "edit")}
               canDelete={canDoItem("products", "delete")}
               canViewMaterials={canDoItem("materials", "view")}
+              canCreateMaterial={canDoItem("materials", "create")}
+              canEditMaterial={canDoItem("materials", "edit")}
+              canDeleteMaterial={canDoItem("materials", "delete")}
               canPrint={canDoItem("printing", "view")}
-              canImportExport={canDoItem("dataImport", "create")}
+              canImportExport={canDoItem("dataImport", "view")}
+              canImport={canDoItem("dataImport", "create")}
               canCreateProject={canDoItem("projects", "create")}
               canEditProject={canDoItem("projects", "edit")}
               canDeleteProject={canDoItem("projects", "delete")}
@@ -951,6 +955,9 @@ export default function Dashboard() {
               canCreate={canDo("tasks", "create")}
               canEdit={canDo("tasks", "edit")}
               canDelete={canDo("tasks", "delete")}
+              canCreateSteps={canDoItem("taskSteps", "create")}
+              canEditSteps={canDoItem("taskSteps", "edit")}
+              canDeleteSteps={canDoItem("taskSteps", "delete")}
             />
           ) : (
             <NotesPanel

@@ -60,8 +60,12 @@ export default function CostingPanel({
   canEdit = true,
   canDelete = true,
   canViewMaterials = true,
+  canCreateMaterial = true,
+  canEditMaterial = true,
+  canDeleteMaterial = true,
   canPrint = true,
   canImportExport = true,
+  canImport = true,
   canCreateProject = true,
   canEditProject = true,
   canDeleteProject = true,
@@ -82,8 +86,15 @@ export default function CostingPanel({
   canEdit?: boolean;
   canDelete?: boolean;
   canViewMaterials?: boolean;
+  /** Raw material item permissions (separate from products). */
+  canCreateMaterial?: boolean;
+  canEditMaterial?: boolean;
+  canDeleteMaterial?: boolean;
   canPrint?: boolean;
+  /** Excel menu visibility (dataImport.view). */
   canImportExport?: boolean;
+  /** Row importing (dataImport.create). */
+  canImport?: boolean;
   canCreateProject?: boolean;
   canEditProject?: boolean;
   canDeleteProject?: boolean;
@@ -512,10 +523,11 @@ export default function CostingPanel({
           <MaterialsSheet
             materials={materials}
             loading={materials === undefined}
-            canCreate={canCreate}
-            canEdit={canEdit}
-            canDelete={canDelete}
+            canCreate={canCreateMaterial}
+            canEdit={canEditMaterial}
+            canDelete={canDeleteMaterial}
             canImportExport={canImportExport}
+            canImport={canImport}
           />
         </div>
       ) : view?.kind === "projects" ? (
