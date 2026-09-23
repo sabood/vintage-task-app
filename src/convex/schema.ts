@@ -225,6 +225,28 @@ const schema = defineSchema(
       markupPct: v.optional(v.number()),
     }).index("by_owner", ["ownerId"]),
 
+    // projects — full project information the FG products belong to
+    projects: defineTable({
+      ownerId: v.id("users"),
+      name: v.string(),
+      code: v.optional(v.string()), // auto code, e.g. PR0001
+      description: v.optional(v.string()),
+      client: v.optional(v.string()), // customer / stakeholder
+      assignee: v.optional(v.string()), // person responsible
+      dueAt: v.optional(v.number()), // deadline timestamp (ms)
+      status: v.optional(
+        v.union(
+          v.literal("planning"),
+          v.literal("in_progress"),
+          v.literal("on_hold"),
+          v.literal("completed"),
+          v.literal("cancelled"),
+        ),
+      ),
+      priority: v.optional(taskPriorityValidator),
+      budget: v.optional(v.number()), // planned budget
+    }).index("by_owner", ["ownerId"]),
+
     // one line inside a costing sheet
     costingItems: defineTable({
       ownerId: v.id("users"),

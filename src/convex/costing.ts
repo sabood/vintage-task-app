@@ -543,6 +543,131 @@ export const removeSheet = mutation({
   },
 });
 
+// ── Projects (full project information entity) ───────────────────────
+
+const PROJECT_STATUSES = [
+  "planning",
+  "in_progress",
+  "on_hold",
+  "completed",
+  "cancelled",
+] as const;
+type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+/** All projects for the user, sorted by due date (soonest first) then name. */
+export const listProjects = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const rows = await ctx.db
+      .query("projects")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return rows.sort((a, b) => {
+      if (a.dueAt !== undefined && b.dueAt !== undefined && a.dueAt !== b.dueAt)
+        return a.dueAt - b.dueAt;
+      if (a.dueAt !== undefined) return -1;
+      if (b.dueAt !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  },
+});
+
+/** Create a project with full details; PR code auto-assigned. */
+export const addProject = mutation({
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    client: v.optional(v.string()),
+    assignee: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    status: v.optional(v.string()),
+    priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+    budget: v.optional(v.number()),
+  },
+  handler: async (ctx, opts) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const name = opts.name.trim();
+    if (name.length === 0) throw new Error("Give the project a name.");
+    const code = await nextCode(ctx, userId, "PR");
+    const status = opts.status?.trim() as ProjectStatus | undefined;
+    return await ctx.db.insert("projects", {
+      ownerId: userId,
+      name: name.slice(0, MAX_NAME_LENGTH),
+      code,
+      description: opts.description?.trim().slice(0, 2000) || undefined,
+      client: opts.client?.trim().slice(0, 120) || undefined,
+      assignee: opts.assignee?.trim().slice(0, 120) || undefined,
+      dueAt: opts.dueAt,
+      status:
+        status && (PROJECT_STATUSES as readonly string[]).includes(status)
+          ? status
+          : "planning",
+      priority: opts.priority,
+      budget: opts.budget !== undefined && opts.budget >= 0 ? opts.budget : undefined,
+    });
+  },
+});
+
+/** Update any of a project's details. */
+export const updateProject = mutation({
+  args: {
+    id: v.id("projects"),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
+    client: v.optional(v.string()),
+    assignee: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    status: v.optional(v.string()),
+    priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+    budget: v.optional(v.number()),
+  },
+  handler: async (ctx, { id, ...patch }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const project = await ctx.db.get(id);
+    if (project === null || project.ownerId !== userId)
+      throw new Error("That project no longer exists.");
+    const clean: Record<string, unknown> = {};
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (name.length === 0) throw new Error("Give the project a name.");
+      clean.name = name.slice(0, MAX_NAME_LENGTH);
+    }
+    if (patch.description !== undefined)
+      clean.description = patch.description.trim().slice(0, 2000) || undefined;
+    if (patch.client !== undefined)
+      clean.client = patch.client.trim().slice(0, 120) || undefined;
+    if (patch.assignee !== undefined)
+      clean.assignee = patch.assignee.trim().slice(0, 120) || undefined;
+    if (patch.dueAt !== undefined) clean.dueAt = patch.dueAt;
+    if (patch.status !== undefined) {
+      const status = patch.status.trim() as ProjectStatus;
+      clean.status =
+        (PROJECT_STATUSES as readonly string[]).includes(status) ? status : undefined;
+    }
+    if (patch.priority !== undefined) clean.priority = patch.priority;
+    if (patch.budget !== undefined)
+      clean.budget = patch.budget >= 0 ? patch.budget : undefined;
+    await ctx.db.patch(id, clean);
+  },
+});
+
+/** Delete a project (its FG products are detached, not deleted). */
+export const removeProject = mutation({
+  args: { id: v.id("projects") },
+  handler: async (ctx, { id }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const project = await ctx.db.get(id);
+    if (project === null) return;
+    if (project.ownerId !== userId) throw new Error("Not your project.");
+    await ctx.db.delete(id);
+  },
+});
+
 // ── Finished goods (FG products grouped by project) ───────────────────
 
 /** All FG products for the user, newest first. */

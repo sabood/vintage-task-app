@@ -422,24 +422,167 @@ export default function Dashboard() {
   const addFgM = useMutation(api.costing.addFinishedGood);
   const updateFgM = useMutation(api.costing.updateFinishedGood);
   const removeFgM = useMutation(api.costing.removeFinishedGood);
+  const addProjectM = useMutation(api.costing.addProject);
+  const updateProjectM = useMutation(api.costing.updateProject);
+  const removeProjectM = useMutation(api.costing.removeProject);
   const [costingView, setCostingView] = useState<CostingView>(null);
+  const [projectDialog, setProjectDialog] = useState<
+    | { mode: "create" }
+    | { mode: "edit"; project: Doc<"projects"> }
+    | null
+  >(null);
+
+  type ProjectFields = {
+    name: string;
+    client: string;
+    assignee: string;
+    description: string;
+    dueDate: string;
+    status: string;
+    priority: string;
+    budget: string;
+  };
+
+  const projectFieldDefs = (
+    initial?: Partial<ProjectFields>,
+  ): {
+    key: keyof ProjectFields | string;
+    label: string;
+    initial?: string;
+    placeholder?: string;
+    required?: boolean;
+    type?: string;
+  }[] => [
+    { key: "name", label: "Project name", placeholder: "e.g. Office renovation", required: true, initial: initial?.name },
+    { key: "client", label: "Client (optional)", placeholder: "e.g. Acme Ltd", initial: initial?.client },
+    { key: "assignee", label: "Assigned to (optional)", placeholder: "e.g. Sarah", initial: initial?.assignee },
+    { key: "dueDate", label: "Due date (optional)", type: "date", initial: initial?.dueDate },
+    { key: "status", label: "Status", initial: initial?.status ?? "planning" },
+    { key: "priority", label: "Priority (high / medium / low)", initial: initial?.priority ?? "medium" },
+    { key: "budget", label: "Budget (optional)", type: "number", initial: initial?.budget },
+    { key: "description", label: "Description (optional)", initial: initial?.description },
+  ];
+
+  const submitProjectFields = async (
+    result: Record<string, string>,
+    existingId?: Id<"projects">,
+  ) => {
+    const name = (result.name ?? "").trim();
+    if (!name) {
+      toast.error("Give the project a name.");
+      return;
+    }
+    const statusOptions = ["planning", "in_progress", "on_hold", "completed", "cancelled"];
+    const rawStatus = (result.status ?? "planning").trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const status = statusOptions.includes(rawStatus) ? rawStatus : "planning";
+    const rawPriority = (result.priority ?? "").trim().toLowerCase();
+    const priority = ["high", "medium", "low"].includes(rawPriority)
+      ? (rawPriority as "high" | "medium" | "low")
+      : undefined;
+    const dueAt = result.dueDate ? new Date(`${result.dueDate}T12:00:00`).getTime() : undefined;
+    const budget = result.budget ? Number(result.budget) : undefined;
+    if (budget !== undefined && !Number.isFinite(budget)) {
+      toast.error("Enter a valid budget.");
+      return;
+    }
+    try {
+      if (existingId) {
+        await updateProjectM({
+          id: existingId,
+          name,
+          client: result.client,
+          assignee: result.assignee,
+          description: result.description,
+          dueAt,
+          status,
+          priority,
+          budget,
+        });
+        toast.success("Project updated.");
+      } else {
+        await addProjectM({
+          name,
+          client: result.client,
+          assignee: result.assignee,
+          description: result.description,
+          dueAt,
+          status,
+          priority,
+          budget,
+        });
+        toast.success(
+          `Project “${name}” created — add products to it from the Products tab.`,
+        );
+      }
+      setProjectDialog(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't save the project.",
+      );
+    }
+  };
+
+  const handleNewProject = async () => {
+    const result = await promptMulti({
+      title: "New project",
+      message: "Codes are assigned automatically — PR for the project.",
+      columns: 2,
+      confirmLabel: "Create project",
+      fields: projectFieldDefs(),
+    });
+    if (result === null) return;
+    await submitProjectFields(result);
+  };
+
+  const handleEditProject = async (project: Doc<"projects">) => {
+    const result = await promptMulti({
+      title: `Edit “${project.name}”`,
+      message: "Update the project information.",
+      columns: 2,
+      confirmLabel: "Save changes",
+      fields: projectFieldDefs({
+        name: project.name,
+        client: project.client ?? "",
+        assignee: project.assignee ?? "",
+        description: project.description ?? "",
+        dueDate:
+          project.dueAt !== undefined
+            ? new Date(project.dueAt).toISOString().slice(0, 10)
+            : "",
+        status: project.status ?? "planning",
+        priority: project.priority ?? "medium",
+        budget: project.budget !== undefined ? String(project.budget) : "",
+      }),
+    });
+    if (result === null) return;
+    await submitProjectFields(result, project._id);
+  };
+
+  const handleDeleteProject = async (project: Doc<"projects">) => {
+    const ok = await confirm({
+      title: `Delete “${project.name}”?`,
+      message:
+        "The project information is removed. Its products are kept and become standalone.",
+      confirmLabel: "Delete project",
+      danger: true,
+      icon: "danger",
+    });
+    if (!ok) return;
+    try {
+      await removeProjectM({ id: project._id });
+      toast.success("Project deleted.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't delete the project.",
+      );
+    }
+  };
 
   const handleNewFg = async (projectName: string) => {
     const cleanProject = projectName.trim();
     if (!cleanProject || cleanProject === "new") {
-      // Opened from the Projects tab: ask for the project AND product together.
-      const result = await promptMulti({
-        title: "New project & product",
-        message: "Codes are assigned automatically — PR for the project, FG for the product.",
-        columns: 2,
-        confirmLabel: "Create",
-        fields: [
-          { key: "project", label: "Project name", placeholder: "e.g. Office renovation", required: true },
-          { key: "name", label: "Product name (FG)", placeholder: "e.g. Wooden chair", required: true },
-        ],
-      });
-      if (result === null) return;
-      await createFg(result.project.trim(), result.name.trim());
+      // Opened from the Projects tab: create the project entity itself.
+      await handleNewProject();
       return;
     }
     const name = await prompt({
@@ -781,6 +924,8 @@ export default function Dashboard() {
               onRenameFg={(fg) => void handleRenameFg(fg)}
               onDeleteFg={(fg) => void handleDeleteFg(fg)}
               onEditFg={(fg) => void handleEditFg(fg)}
+              onEditProject={(p) => void handleEditProject(p)}
+              onDeleteProject={(p) => void handleDeleteProject(p)}
               canCreate={canDo("costing", "create")}
               canEdit={canDo("costing", "edit")}
               canDelete={canDo("costing", "delete")}
