@@ -86,6 +86,22 @@ export const authoriseActor = internalQuery({
   },
 });
 
+/** Internal: move everyone managed by `oldManagerId` under `newManagerId`. */
+export const reassignTeamInternal = internalMutation({
+  args: { oldManagerId: v.id("users"), newManagerId: v.id("users") },
+  handler: async (ctx, { oldManagerId, newManagerId }) => {
+    const settingsDoc = await settingsForUser(ctx, oldManagerId);
+    if (settingsDoc === null) return;
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.managerId !== undefined && m.managerId === oldManagerId
+          ? { ...m, managerId: newManagerId }
+          : m,
+      ),
+    });
+  },
+});
+
 /**
  * Internal: gate every password sign-in. Runs before the password is checked,
  * so a removed or switched-off login can never sign in — and self sign-up is
@@ -130,6 +146,7 @@ export const registerLogin = internalMutation({
     createdBy: v.id("users"),
     role: v.union(v.literal("admin"), v.literal("user"), v.literal("member")),
     customRoleId: v.optional(v.id("customRoles")),
+    managerId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("credentials", {
@@ -137,6 +154,7 @@ export const registerLogin = internalMutation({
       userId: args.userId,
       username: args.username,
       displayName: args.displayName,
+      managerId: args.managerId,
       createdBy: args.createdBy,
       createdAt: Date.now(),
     });
@@ -150,6 +168,7 @@ export const registerLogin = internalMutation({
           userId: args.userId,
           role: args.role,
           customRoleId: args.customRoleId,
+          managerId: args.managerId,
           invitedBy: args.createdBy,
           joinedAt: Date.now(),
         },
@@ -270,6 +289,7 @@ export const listLogins = query({
           userId: c.userId,
           username: c.username,
           displayName: c.displayName ?? null,
+          managerId: member?.managerId ?? c.managerId ?? null,
           createdAt: c.createdAt,
           lastLoginAt: c.lastLoginAt ?? null,
           disabled: c.disabled ?? false,
@@ -295,6 +315,7 @@ export const createUserLogin = action({
     name: v.optional(v.string()),
     role: v.union(v.literal("admin"), v.literal("user"), v.literal("member")),
     customRoleId: v.optional(v.id("customRoles")),
+    managerId: v.optional(v.id("users")),
   },
   handler: async (ctx, args): Promise<{ username: string }> => {
     const actor: ActorInfo = await ctx.runQuery(
@@ -324,6 +345,7 @@ export const createUserLogin = action({
       createdBy: actor.userId,
       role: args.role,
       customRoleId: args.customRoleId,
+      managerId: args.managerId,
     });
 
     return { username };
@@ -404,11 +426,19 @@ export const deleteLoginInternal = internalMutation({
     if (row === null) return null;
     await ctx.db.delete(credentialsId);
 
-    // remove from the organisation's member list
+    // remove from the organisation's member list; their juniors move up under
+    // the removed person's own manager so nobody is orphaned
     const settingsDoc = await settingsForUser(ctx, row.orgId);
     if (settingsDoc !== null) {
+      const target = settingsDoc.members.find((m) => m.userId === row.userId);
       await ctx.db.patch(settingsDoc._id, {
-        members: settingsDoc.members.filter((m) => m.userId !== row.userId),
+        members: settingsDoc.members
+          .filter((m) => m.userId !== row.userId)
+          .map((m) =>
+            m.managerId !== undefined && m.managerId === row.userId
+              ? { ...m, managerId: target?.managerId }
+              : m,
+          ),
       });
     }
 

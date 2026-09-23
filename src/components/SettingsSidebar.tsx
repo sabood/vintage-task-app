@@ -1,10 +1,11 @@
-import { Building2, Layers, Tags, Users } from "lucide-react";
+import { Building2, GitBranch, Layers, Tags, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export type SettingsSectionKey =
   | "organisation"
   | "people"
+  | "team"
   | "roles"
   | "catalog";
 
@@ -25,6 +26,12 @@ const ITEMS: {
     label: "Users & roles",
     hint: "People and permissions",
     icon: Users,
+  },
+  {
+    key: "team",
+    label: "Team hierarchy",
+    hint: "Who reports to whom",
+    icon: GitBranch,
   },
   { key: "roles", label: "Roles", hint: "Reusable permission sets", icon: Tags },
   {

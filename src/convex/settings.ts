@@ -28,29 +28,21 @@ const ROLE_RANK: Record<WorkspaceRole, number> = {
   member: 0,
 };
 
-/** Users a given role may manage (strictly below itself; super can also manage admins). */
-function canManage(actor: WorkspaceRole, target: WorkspaceRole): boolean {
-  if (actor === "super") return true;
-  if (actor === "admin") return ROLE_RANK[target] < ROLE_RANK.admin;
-  return false;
-}
-
 // ── Team hierarchy ──────────────────────────────────────────────────────
 // Members form a management chain: each member has an optional managerId
 // pointing at another member of the same organisation. The super admin sits
 // at the top with no manager.
 
 /**
- * Would setting `candidateManagerId` as `memberUserId`'s manager create a
+ * Would making `candidateManagerId` the manager of `memberUserId` create a
  * loop in the chain? Walks up from the candidate; if we reach the member
  * (or the member itself is the candidate), it's a loop.
  */
-async function wouldCycle(
-  ctx: { db: any },
+function wouldCycle(
   settingsDoc: Doc<"settings">,
-  memberUserId: Id<"users">,
   candidateManagerId: Id<"users">,
-): Promise<boolean> {
+  memberUserId: Id<"users">,
+): boolean {
   if (memberUserId === candidateManagerId) return true;
   let current = candidateManagerId;
   for (let depth = 0; depth < 64; depth += 1) {
@@ -93,8 +85,10 @@ function juniorsOf(
   return out;
 }
 
-/** Can the actor manage (reassign, edit, remove) the target member? */
-function canManage(actor: WorkspaceRole, target: WorkspaceRole): boolean {
+/**
+ * Read the caller's settings row (queries only read; if none exists yet the
+ * caller simply isn't a member of an initialized workspace).
+ */
 async function getSettings(
   ctx: { db: any },
   userId: Id<"users">,
@@ -108,6 +102,13 @@ async function getSettings(
       s.members.some((m) => m.userId === userId),
     ) ?? null
   );
+}
+
+/** Users a given role may manage (strictly below itself; super can also manage admins). */
+function canManage(actor: WorkspaceRole, target: WorkspaceRole): boolean {
+  if (actor === "super") return true;
+  if (actor === "admin") return ROLE_RANK[target] < ROLE_RANK.admin;
+  return false;
 }
 
 /**
@@ -231,6 +232,7 @@ export const claimPendingInvite = mutation({
           userId,
           role: invite.role,
           customRoleId: invite.customRoleId,
+          managerId: invite.managerId,
           invitedBy: invite.ownerId,
           joinedAt: Date.now(),
         },
@@ -311,11 +313,14 @@ export const listMembers = query({
           userId: m.userId,
           role: m.role as WorkspaceRole,
           customRoleId: m.customRoleId,
+          managerId: m.managerId,
           permissions: effective,
           joinedAt: m.joinedAt,
           name: user?.name ?? undefined,
           email: user?.email ?? undefined,
           isSuper: m.userId === settingsDoc.ownerId,
+          // how many people report to this member, directly or indirectly
+          teamSize: juniorsOf(settingsDoc, m.userId).length,
         };
       }),
     );
@@ -340,8 +345,9 @@ export const inviteMember = mutation({
       v.literal("member"),
     ),
     customRoleId: v.optional(v.id("customRoles")),
+    managerId: v.optional(v.id("users")),
   },
-  handler: async (ctx, { email, role, customRoleId }) => {
+  handler: async (ctx, { email, role, customRoleId, managerId }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const settingsDoc = await getOrCreateSettings(ctx, userId);
@@ -357,6 +363,16 @@ export const inviteMember = mutation({
     }
     const cleanEmail = email.trim().toLowerCase();
 
+    // the manager must already be a member of this organisation
+    if (managerId !== undefined) {
+      if (!settingsDoc.members.some((m) => m.userId === managerId)) {
+        throw new Error("The chosen manager isn't a member yet.");
+      }
+      if (wouldCycle(settingsDoc, managerId, managerId)) {
+        throw new Error("That manager assignment would loop.");
+      }
+    }
+
     const user = await findUserByEmail(ctx, cleanEmail);
     if (user === null) {
       // Not signed in yet → store a pending invite.
@@ -365,13 +381,14 @@ export const inviteMember = mutation({
         (i) => i.ownerId === settingsDoc.ownerId && i.email === cleanEmail,
       );
       if (dup !== undefined) {
-        await ctx.db.patch(dup._id, { role, customRoleId });
+        await ctx.db.patch(dup._id, { role, customRoleId, managerId });
       } else {
         await ctx.db.insert("pendingInvites", {
           ownerId: settingsDoc.ownerId,
           email: cleanEmail,
           role,
           customRoleId,
+          managerId,
           createdAt: Date.now(),
         });
       }
@@ -388,6 +405,7 @@ export const inviteMember = mutation({
           userId: user._id,
           role,
           customRoleId,
+          managerId,
           invitedBy: userId,
           joinedAt: Date.now(),
         },
@@ -417,6 +435,7 @@ export const listPendingInvites = query({
         email: i.email,
         role: i.role,
         customRoleId: i.customRoleId,
+        managerId: i.managerId,
         createdAt: i.createdAt,
       }));
   },
@@ -777,9 +796,132 @@ export const removeMember = mutation({
     if (targetId !== userId && !canManage(actor, target.role as WorkspaceRole)) {
       throw new Error("You can't manage that member.");
     }
+    // their juniors move up under the removed member's own manager (or the
+    // super admin when there isn't one) so nobody is orphaned
+    const fallbackManager = target.managerId;
     await ctx.db.patch(settingsDoc._id, {
-      members: settingsDoc.members.filter((m) => m.userId !== targetId),
+      members: settingsDoc.members
+        .filter((m) => m.userId !== targetId)
+        .map((m) =>
+          m.managerId !== undefined && (m.managerId as Id<"users">) === targetId
+            ? { ...m, managerId: fallbackManager }
+            : m,
+        ),
     });
+  },
+});
+
+// ── Team hierarchy mutations ────────────────────────────────────────────
+
+/**
+ * Set (or clear) a member's manager. The manager must be a member of the
+ * organisation, can't be the member themselves, and can't be one of their
+ * juniors — otherwise the chain would loop.
+ */
+export const setMemberManager = mutation({
+  args: {
+    userId: v.id("users"),
+    managerId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, { userId: targetId, managerId }) => {
+    const actorId = await getAuthUserId(ctx);
+    if (actorId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getOrCreateSettings(ctx, actorId);
+    const actor = await actorRole(ctx, settingsDoc, actorId);
+    if (!actor || (actor !== "super" && actor !== "admin")) {
+      throw new Error("Only the super admin or an admin can assign managers.");
+    }
+    if (targetId === settingsDoc.ownerId) {
+      throw new Error("The super admin has no manager — they own the organisation.");
+    }
+    const target = settingsDoc.members.find((m) => m.userId === targetId);
+    if (!target) throw new Error("That user is not a member.");
+
+    if (managerId === undefined) {
+      // clearing — only the super admin may sit at the top
+      if (actor !== "super") {
+        throw new Error("Only the super admin can remove a manager.");
+      }
+    } else {
+      const manager = settingsDoc.members.find((m) => m.userId === managerId);
+      if (manager === undefined) {
+        throw new Error("The chosen manager isn't a member of the organisation.");
+      }
+      if (managerId === targetId) {
+        throw new Error("Someone can't be their own manager.");
+      }
+      if (actor !== "super" && !canManage(actor, manager.role as WorkspaceRole)) {
+        throw new Error("You can't place someone under a manager above your level.");
+      }
+      if (wouldCycle(settingsDoc, managerId, targetId)) {
+        throw new Error(
+          "That would create a loop — this person already manages their manager.",
+        );
+      }
+    }
+
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.userId === targetId ? { ...m, managerId } : m,
+      ),
+    });
+  },
+});
+
+/**
+ * The signed-in member's position in the hierarchy: their manager (name +
+ * id) and everyone below them, one level deep. Any member can call this.
+ */
+export const getMyTeam = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const settingsDoc = await getSettings(ctx, userId);
+    if (settingsDoc === null) return null;
+
+    const nameOf = (id: Id<"users">) => {
+      const m = settingsDoc.members.find((mm) => mm.userId === id);
+      return m ? { userId: id, role: m.role as WorkspaceRole } : null;
+    };
+
+    const me = settingsDoc.members.find((m) => m.userId === userId);
+    const managerEntry =
+      me?.managerId !== undefined ? nameOf(me.managerId as Id<"users">) : null;
+    const manager = managerEntry
+      ? {
+          ...managerEntry,
+          name:
+            managerEntry.role === "super"
+              ? "Organisation owner"
+              : undefined,
+        }
+      : null;
+
+    const direct = settingsDoc.members
+      .filter(
+        (m) => m.managerId !== undefined && (m.managerId as Id<"users">) === userId,
+      )
+      .map((m) => ({
+        userId: m.userId,
+        role: m.role as WorkspaceRole,
+        customRoleId: m.customRoleId,
+      }));
+
+    // hydrate names
+    const hydrate = async (entries: typeof direct) =>
+      Promise.all(
+        entries.map(async (e) => {
+          const user = await ctx.db.get(e.userId);
+          return { ...e, name: user?.name ?? undefined, email: user?.email ?? undefined };
+        }),
+      );
+
+    return {
+      manager: manager && manager.role !== "super" ? manager : null,
+      isSuper: settingsDoc.ownerId === userId,
+      directReports: await hydrate(direct),
+    };
   },
 });
 

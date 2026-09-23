@@ -40,6 +40,7 @@ import {
   CheckSquare,
   ChevronDown,
   Copy,
+  GitBranch,
   Eye,
   EyeOff,
   KeyRound,
@@ -77,11 +78,13 @@ type Member = {
   userId: Id<"users">;
   role: Role;
   customRoleId?: Id<"customRoles">;
+  managerId?: Id<"users">;
   permissions?: GranularPerms;
   joinedAt: number;
   name?: string;
   email?: string;
   isSuper: boolean;
+  teamSize: number;
 };
 
 type CustomRole = {
@@ -106,12 +109,26 @@ type ProvisionedLogin = {
   userId: Id<"users">;
   username: string;
   displayName: string | null;
+  managerId: Id<"users"> | null;
   createdAt: number;
   lastLoginAt: number | null;
   disabled: boolean;
   role: Role;
   customRoleId: Id<"customRoles"> | null;
 };
+
+/** My position in the management chain (api.settings.getMyTeam). */
+type MyTeam = {
+  manager: { userId: Id<"users">; role: Role; name?: string } | null;
+  isSuper: boolean;
+  directReports: Array<{
+    userId: Id<"users">;
+    role: Role;
+    customRoleId?: Id<"customRoles">;
+    name?: string;
+    email?: string;
+  }>;
+} | null;
 
 /** Readable, easy-to-dictate password for a freshly created login. */
 function makePassword(): string {
@@ -380,6 +397,8 @@ export default function SettingsPanel() {
   // organisation + provisioned sign-ins
   const organisation = useQuery(api.accounts.getOrganisation);
   const logins = useQuery(api.accounts.listLogins);
+  const myTeam = useQuery(api.settings.getMyTeam) as MyTeam;
+  const setMemberManager = useMutation(api.settings.setMemberManager);
   const createOrganisation = useMutation(api.accounts.createOrganisation);
   const createUserLogin = useAction(api.accounts.createUserLogin);
   const setLoginPassword = useAction(api.accounts.setLoginPassword);
@@ -419,6 +438,8 @@ export default function SettingsPanel() {
   const [newPassword, setNewPassword] = useState(makePassword());
   const [revealPassword, setRevealPassword] = useState(true);
   const [inviteMode, setInviteMode] = useState(false);
+  /** Manager chosen in the create-user dialog (userId, or null = the org owner). */
+  const [newManagerId, setNewManagerId] = useState<Id<"users"> | null>(null);
   const [handedOver, setHandedOver] = useState<{
     username: string;
     password: string;
@@ -496,8 +517,33 @@ export default function SettingsPanel() {
     setRevealPassword(true);
     setAddRole("user");
     setAddCustomRoleId(null);
+    setNewManagerId(null);
     setInviteMode(false);
     resetAddDialog();
+  };
+
+  /** Display name for a member id, falling back to their email / "User". */
+  const memberName = (id: Id<"users">) => {
+    const m = (members ?? []).find((mm) => mm.userId === id);
+    return m?.name ?? m?.email ?? "User";
+  };
+
+  const handleAssignManager = async (member: Member, managerId: Id<"users"> | null) => {
+    try {
+      await setMemberManager({
+        userId: member.userId,
+        managerId: managerId ?? undefined,
+      });
+      toast.success(
+        managerId === null
+          ? `${memberName(member.userId)} moved to the top of the chain.`
+          : `${memberName(member.userId)} now reports to ${memberName(managerId)}.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Couldn't set the manager.",
+      );
+    }
   };
 
   const handleCreateOrganisation = async () => {
@@ -524,6 +570,7 @@ export default function SettingsPanel() {
         name: newPersonName.trim() || undefined,
         role: addRole,
         customRoleId: addCustomRoleId ?? undefined,
+        managerId: newManagerId ?? undefined,
       });
       setCreateOpen(false);
       setHandedOver({ username: result.username, password: newPassword });
@@ -602,6 +649,7 @@ export default function SettingsPanel() {
         email,
         role: addRole,
         customRoleId: addCustomRoleId ?? undefined,
+        managerId: newManagerId ?? undefined,
       });
       if (result?.pending) {
         toast.success(
@@ -957,6 +1005,11 @@ export default function SettingsPanel() {
                       )}
                     </p>
                   )}
+                  {!m.isSuper && m.managerId !== undefined && (
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
+                      Reports to {memberName(m.managerId as Id<"users">)}
+                    </p>
+                  )}
                   {!m.isSuper && (
                     <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
                       {m.customRoleId
@@ -1083,6 +1136,33 @@ export default function SettingsPanel() {
                             : "Switch off sign-in"}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Reports to</DropdownMenuLabel>
+                        {(members ?? [])
+                          .filter(
+                            (c) =>
+                              !c.isSuper &&
+                              c.userId !== m.userId &&
+                              c.managerId !== m.userId,
+                          )
+                          .map((c) => (
+                            <DropdownMenuItem
+                              key={c.userId}
+                              onClick={() => void handleAssignManager(m, c.userId)}
+                            >
+                              <GitBranch className="size-3.5" />
+                              {memberName(c.userId)}
+                            </DropdownMenuItem>
+                          ))}
+                        {isSuper && (
+                          <DropdownMenuItem
+                            onClick={() => void handleAssignManager(m, null)}
+                          >
+                            <GitBranch className="size-3.5" />
+                            Organisation owner (top)
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={() => {
@@ -1121,6 +1201,92 @@ export default function SettingsPanel() {
             ))}
           </ul>
         )}
+      </section>
+
+      {/* team hierarchy */}
+      <section
+        id="settings-team"
+        className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
+        <header className="flex flex-wrap items-center gap-2 border-b px-5 py-3.5">
+          <GitBranch className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Team hierarchy</h2>
+          <span className="ml-auto text-xs text-muted-foreground">
+            Managers control, members work
+          </span>
+        </header>
+        {(() => {
+          const all = members ?? [];
+          const top = all.filter(
+            (m) =>
+              m.isSuper ||
+              m.managerId === undefined ||
+              !all.some((c) => c.userId === m.managerId),
+          );
+          const childrenOf = (id: Id<"users">) =>
+            all.filter((m) => m.managerId === id);
+
+          const renderNode = (m: (typeof all)[number], depth: number) => {
+            const kids = childrenOf(m.userId);
+            return (
+              <div key={m.userId}>
+                <div
+                  className={cn(
+                    "flex items-center gap-2 py-1.5",
+                    depth > 0 && "ml-4 border-l border-border/60 pl-3",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-bold",
+                      depth === 0
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {(m.name ?? m.email ?? "U").charAt(0).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {m.isSuper ? m.name ?? "Organisation owner" : m.name ?? m.email ?? "User"}
+                    {m.teamSize > 0 && (
+                      <span className="ml-1.5 text-[11px] text-muted-foreground">
+                        manages {m.teamSize}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                      ROLE_META[m.role].chip,
+                    )}
+                  >
+                    {ROLE_META[m.role].label}
+                  </span>
+                </div>
+                {kids.map((k) => renderNode(k, depth + 1))}
+              </div>
+            );
+          };
+
+          return (
+            <div className="px-5 py-4">
+              {top.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No members yet — create users to build your team.
+                </p>
+              ) : (
+                <div className="space-y-0.5">
+                  {top.map((m) => renderNode(m, 0))}
+                </div>
+              )}
+              <p className="mt-3 text-xs text-muted-foreground">
+                Change who reports to whom from the Login menu on each member
+                above. Managers see their team's tasks; juniors work and report
+                up the chain.
+              </p>
+            </div>
+          );
+        })()}
       </section>
 
       {/* custom roles manager */}
@@ -1365,6 +1531,39 @@ export default function SettingsPanel() {
                 </div>
               </>
             )}
+
+            {/* manager — who this person reports to */}
+            <div className="space-y-1.5">
+              <Label>Reports to</Label>
+              <select
+                aria-label="Manager"
+                className="h-9 w-full rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                value={newManagerId ?? ""}
+                onChange={(e) =>
+                  setNewManagerId(
+                    e.target.value === ""
+                      ? null
+                      : (e.target.value as Id<"users">),
+                  )
+                }
+              >
+                <option value="">
+                  Organisation owner (top of the chain)
+                </option>
+                {(members ?? [])
+                  .filter((m) => !m.isSuper)
+                  .map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {memberName(m.userId)}
+                      {m.teamSize > 0 ? ` — manages ${m.teamSize}` : ""}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                The chain of command: managers see their team's work; juniors
+                report up. You can change this any time from the member list.
+              </p>
+            </div>
 
             <div className="space-y-1.5">
               <Label>Role</Label>
