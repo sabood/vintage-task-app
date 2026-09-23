@@ -737,9 +737,9 @@ export default function Dashboard() {
     },
     {
       id: "costing",
-      label: "Costing sheet",
+      label: "Projects",
       icon: Calculator,
-      description: "Job cost calculator",
+      description: "Jobs, quotes & material costs",
     },
     ...(canOpenSettings
       ? [
@@ -752,6 +752,16 @@ export default function Dashboard() {
         ]
       : []),
   ];
+
+  /**
+   * Tabs land on their section's list view — so the Projects tab always opens
+   * the projects list instead of keeping whatever was last open.
+   */
+  const selectSection = (next: Section) => {
+    if (!sectionAllowed(next)) return;
+    setSection(next);
+    if (next === "costing") setCostingView({ kind: "projects" });
+  };
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -853,7 +863,7 @@ export default function Dashboard() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => sectionAllowed(item.id) && setSection(item.id)}
+                    onClick={() => selectSection(item.id)}
                     aria-label={item.label}
                     className={cn(
                       "grid size-7 place-items-center rounded-lg transition-colors",
@@ -875,7 +885,7 @@ export default function Dashboard() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => sectionAllowed(item.id) && setSection(item.id)}
+                    onClick={() => selectSection(item.id)}
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
