@@ -64,6 +64,10 @@ const teamMemberValidator = v.object({
   // when set, the member's access comes from a manually created role
   customRoleId: v.optional(v.id("customRoles")),
   permissions: v.optional(permissionsValidator),
+  /** This person's manager — another member of the same organisation. The
+   *  super admin has no manager (undefined). Forms a management chain:
+   *  manager → their seniors → their juniors. */
+  managerId: v.optional(v.id("users")),
   invitedBy: v.optional(v.id("users")),
   joinedAt: v.number(),
 });
@@ -87,6 +91,8 @@ const credentials = defineTable({
   userId: v.id("users"), // the auth user row this login signs in as
   username: v.string(), // lower-cased; unique across the deployment
   displayName: v.optional(v.string()),
+  /** This person's manager — another member of the same organisation. */
+  managerId: v.optional(v.id("users")),
   createdBy: v.id("users"),
   createdAt: v.number(),
   lastLoginAt: v.optional(v.number()),
@@ -116,6 +122,8 @@ const pendingInvites = defineTable({
     v.literal("member"),
   ),
   customRoleId: v.optional(v.id("customRoles")),
+  /** Manager to attach when the invite is claimed. */
+  managerId: v.optional(v.id("users")),
   createdAt: v.number(),
 }).index("by_owner", ["ownerId"]);
 

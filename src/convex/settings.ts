@@ -35,10 +35,66 @@ function canManage(actor: WorkspaceRole, target: WorkspaceRole): boolean {
   return false;
 }
 
+// ── Team hierarchy ──────────────────────────────────────────────────────
+// Members form a management chain: each member has an optional managerId
+// pointing at another member of the same organisation. The super admin sits
+// at the top with no manager.
+
 /**
- * Read the caller's settings row (queries only read; if none exists yet the
- * caller simply isn't a member of an initialized workspace).
+ * Would setting `candidateManagerId` as `memberUserId`'s manager create a
+ * loop in the chain? Walks up from the candidate; if we reach the member
+ * (or the member itself is the candidate), it's a loop.
  */
+async function wouldCycle(
+  ctx: { db: any },
+  settingsDoc: Doc<"settings">,
+  memberUserId: Id<"users">,
+  candidateManagerId: Id<"users">,
+): Promise<boolean> {
+  if (memberUserId === candidateManagerId) return true;
+  let current = candidateManagerId;
+  for (let depth = 0; depth < 64; depth += 1) {
+    if (current === memberUserId) return true;
+    if (current === settingsDoc.ownerId) return false;
+    const entry = settingsDoc.members.find((m) => m.userId === current);
+    if (entry === undefined) return false;
+    const next = entry.managerId;
+    if (next === undefined) return false;
+    current = next as Id<"users">;
+  }
+  return true; // defensively bail on absurd chains
+}
+
+/**
+ * Everyone strictly below `managerId` in the chain (their juniors, at any
+ * depth). Returns member entries.
+ */
+function juniorsOf(
+  settingsDoc: Doc<"settings">,
+  managerId: Id<"users">,
+): Array<{ userId: Id<"users">; role: WorkspaceRole; managerId?: Id<"users"> }> {
+  const out: Array<{ userId: Id<"users">; role: WorkspaceRole; managerId?: Id<"users"> }> = [];
+  const frontier = [managerId];
+  const seen = new Set<Id<"users">>([managerId]);
+  while (frontier.length > 0) {
+    const current = frontier.shift() as Id<"users">;
+    for (const m of settingsDoc.members) {
+      if (m.managerId !== undefined && (m.managerId as Id<"users">) === current && !seen.has(m.userId)) {
+        seen.add(m.userId);
+        out.push({
+          userId: m.userId,
+          role: m.role as WorkspaceRole,
+          managerId: m.managerId as Id<"users"> | undefined,
+        });
+        frontier.push(m.userId);
+      }
+    }
+  }
+  return out;
+}
+
+/** Can the actor manage (reassign, edit, remove) the target member? */
+function canManage(actor: WorkspaceRole, target: WorkspaceRole): boolean {
 async function getSettings(
   ctx: { db: any },
   userId: Id<"users">,
