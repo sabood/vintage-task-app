@@ -1,5 +1,5 @@
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import NotesSidebar from "@/components/NotesSidebar";
@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
+import type { PromptField } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 import type { ActionKey, SectionKey } from "@/lib/permissions";
 
@@ -445,14 +446,7 @@ export default function Dashboard() {
 
   const projectFieldDefs = (
     initial?: Partial<ProjectFields>,
-  ): {
-    key: keyof ProjectFields | string;
-    label: string;
-    initial?: string;
-    placeholder?: string;
-    required?: boolean;
-    type?: string;
-  }[] => [
+  ): PromptField[] => [
     { key: "name", label: "Project name", placeholder: "e.g. Office renovation", required: true, initial: initial?.name },
     { key: "client", label: "Client (optional)", placeholder: "e.g. Acme Ltd", initial: initial?.client },
     { key: "assignee", label: "Assigned to (optional)", placeholder: "e.g. Sarah", initial: initial?.assignee },

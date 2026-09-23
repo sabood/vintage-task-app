@@ -53,7 +53,7 @@ export type PromptField = {
   label: string;
   placeholder?: string;
   initial?: string;
-  type?: "text" | "number";
+  type?: "text" | "number" | "date";
   required?: boolean;
   /** Overrides the field-level error message. */
   validate?: (value: string) => string | null;

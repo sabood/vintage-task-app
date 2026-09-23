@@ -508,7 +508,9 @@ export default function CostingPanel({
             }}
             onNewProject={canCreate ? () => onNewFg("new") : undefined}
             onEditProject={canEdit ? onEditProject : undefined}
-            onDeleteProject={canDelete ? (p) => void onDeleteProject(p) : undefined}
+            onDeleteProject={
+              canDelete ? (p) => onDeleteProject?.(p) : undefined
+            }
           />
         </div>
       ) : view?.kind === "fg" && activeFg ? (
