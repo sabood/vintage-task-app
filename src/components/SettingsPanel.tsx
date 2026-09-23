@@ -156,6 +156,14 @@ function formatWhen(ts: number | null): string {
   });
 }
 
+/** Rank used to sort the hierarchy tree (higher roles first). */
+const ROLE_RANK_OF: Record<Role, number> = {
+  super: 3,
+  admin: 2,
+  user: 1,
+  member: 0,
+};
+
 const ROLE_META: Record<Role, { label: string; chip: string; blurb: string }> = {
   super: {
     label: "Super user",
@@ -449,6 +457,9 @@ export default function SettingsPanel() {
   const [pwLogin, setPwLogin] = useState<ProvisionedLogin | null>(null);
   const [pwDraft, setPwDraft] = useState("");
   const [pwResult, setPwResult] = useState<string | null>(null);
+
+  // collapsed nodes in the team hierarchy tree
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<Id<"users">>>(new Set());
 
   useEffect(() => {
     if (organisation?.name) setOrgName(organisation.name);
@@ -1217,76 +1228,228 @@ export default function SettingsPanel() {
         </header>
         {(() => {
           const all = members ?? [];
-          const top = all.filter(
-            (m) =>
-              m.isSuper ||
-              m.managerId === undefined ||
-              !all.some((c) => c.userId === m.managerId),
-          );
           const childrenOf = (id: Id<"users">) =>
-            all.filter((m) => m.managerId === id);
+            all
+              .filter((m) => m.managerId === id)
+              .sort(
+                (a, b) =>
+                  ROLE_RANK_OF[b.role] - ROLE_RANK_OF[a.role] ||
+                  (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""),
+              );
+          const top = all
+            .filter(
+              (m) =>
+                m.isSuper ||
+                m.managerId === undefined ||
+                !all.some((c) => c.userId === m.managerId),
+            )
+            .sort(
+              (a, b) =>
+                ROLE_RANK_OF[b.role] - ROLE_RANK_OF[a.role] ||
+                (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""),
+            );
 
-          const renderNode = (m: (typeof all)[number], depth: number) => {
+          const renderNode = (m: (typeof all)[number], depth: number): React.ReactNode => {
             const kids = childrenOf(m.userId);
+            const isCollapsed = collapsedNodes.has(m.userId);
+            const login = loginFor(m.userId);
             return (
-              <div key={m.userId}>
+              <div key={m.userId} className="relative">
+                {/* connector line for children */}
+                {kids.length > 0 && !isCollapsed && (
+                  <span
+                    aria-hidden
+                    className="absolute top-9 bottom-3 left-[27px] w-px bg-border"
+                  />
+                )}
                 <div
                   className={cn(
-                    "flex items-center gap-2 py-1.5",
-                    depth > 0 && "ml-4 border-l border-border/60 pl-3",
+                    "group/node relative flex items-center gap-2.5 rounded-xl px-2 py-2 transition-colors",
+                    depth > 0 && "ml-6",
+                    depth > 0 &&
+                      "before:absolute before:top-1/2 before:-left-4 before:h-px before:w-4 before:bg-border",
+                    "hover:bg-accent/60",
                   )}
                 >
+                  {/* expand / collapse */}
+                  {kids.length > 0 ? (
+                    <button
+                      type="button"
+                      aria-label={isCollapsed ? "Expand" : "Collapse"}
+                      className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                      onClick={() =>
+                        setCollapsedNodes((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(m.userId)) next.delete(m.userId);
+                          else next.add(m.userId);
+                          return next;
+                        })
+                      }
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "size-3.5 transition-transform",
+                          isCollapsed && "-rotate-90",
+                        )}
+                      />
+                    </button>
+                  ) : (
+                    <span className="size-5 shrink-0" />
+                  )}
+
+                  {/* avatar */}
                   <span
                     className={cn(
-                      "grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-bold",
-                      depth === 0
-                        ? "bg-primary/15 text-primary"
-                        : "bg-muted text-muted-foreground",
+                      "grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold",
+                      m.isSuper
+                        ? "bg-primary text-primary-foreground"
+                        : ROLE_RANK_OF[m.role] >= ROLE_RANK_OF.admin
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                          : "bg-primary/10 text-primary",
                     )}
                   >
                     {(m.name ?? m.email ?? "U").charAt(0).toUpperCase()}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {m.isSuper ? m.name ?? "Organisation owner" : m.name ?? m.email ?? "User"}
-                    {m.teamSize > 0 && (
-                      <span className="ml-1.5 text-[11px] text-muted-foreground">
-                        manages {m.teamSize}
+
+                  {/* name + meta */}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {m.isSuper
+                          ? m.name ?? "Organisation owner"
+                          : m.name ?? m.email ?? "User"}
                       </span>
-                    )}
+                      {login && (
+                        <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground/70 sm:inline">
+                          @{login.username}
+                        </span>
+                      )}
+                      {login?.disabled && (
+                        <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[9px] font-semibold text-destructive">
+                          off
+                        </span>
+                      )}
+                    </span>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {m.isSuper
+                        ? "Owns the organisation"
+                        : m.managerId !== undefined &&
+                            all.some((c) => c.userId === m.managerId)
+                          ? `Reports to ${memberName(m.managerId as Id<"users">)}`
+                          : "Top of the chain"}
+                      {m.teamSize > 0 && ` · manages ${m.teamSize} person${m.teamSize === 1 ? "" : "s"}`}
+                    </span>
                   </span>
+
+                  {/* role chip */}
                   <span
                     className={cn(
                       "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
                       ROLE_META[m.role].chip,
                     )}
                   >
-                    {ROLE_META[m.role].label}
+                    {m.customRoleId
+                      ? (customRoles ?? []).find((r) => r._id === m.customRoleId)?.name ?? "Custom"
+                      : ROLE_META[m.role].label}
+                  </span>
+
+                  {/* actions */}
+                  <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within/node:opacity-100 group-hover/node:opacity-100">
+                    {/* move under someone */}
+                    {!m.isSuper && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            title="Change who they report to"
+                            className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                          >
+                            <GitBranch className="size-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>
+                            {m.name ?? m.email ?? "User"} reports to
+                          </DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {(members ?? [])
+                            .filter(
+                              (c) =>
+                                c.userId !== m.userId &&
+                                c.managerId !== m.userId,
+                            )
+                            .map((c) => (
+                              <DropdownMenuItem
+                                key={c.userId}
+                                onClick={() => void handleAssignManager(m, c.userId)}
+                              >
+                                {c.isSuper ? "Organisation owner" : memberName(c.userId)}
+                              </DropdownMenuItem>
+                            ))}
+                          {isSuper && (
+                            <DropdownMenuItem
+                              onClick={() => void handleAssignManager(m, null)}
+                            >
+                              Nobody — top of the chain
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    {/* add someone under this person */}
+                    {ROLE_RANK_OF[m.role] >= ROLE_RANK_OF.user && (
+                      <button
+                        type="button"
+                        title={`Add a junior under ${m.name ?? "this person"}`}
+                        className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                        onClick={() => {
+                          resetCreateDialog();
+                          setNewManagerId(m.userId);
+                          setCreateOpen(true);
+                        }}
+                      >
+                        <UserPlus className="size-3.5" />
+                      </button>
+                    )}
+                    {login && !m.isSuper && (
+                      <button
+                        type="button"
+                        title="Reset password"
+                        className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                        onClick={() => {
+                          setPwLogin(login);
+                          setPwDraft(makePassword());
+                          setPwResult(null);
+                        }}
+                      >
+                        <RefreshCw className="size-3.5" />
+                      </button>
+                    )}
                   </span>
                 </div>
-                {kids.map((k) => renderNode(k, depth + 1))}
+
+                {!isCollapsed && kids.map((k) => renderNode(k, depth + 1))}
               </div>
             );
           };
 
           return (
-            <div className="px-5 py-4">
+            <div className="px-3 py-3">
               {top.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="px-2 py-4 text-sm text-muted-foreground">
                   No members yet — create users to build your team.
                 </p>
               ) : (
-                <div className="space-y-0.5">
-                  {top.map((m) => renderNode(m, 0))}
-                </div>
+                <div>{top.map((m) => renderNode(m, 0))}</div>
               )}
-              <p className="mt-3 text-xs text-muted-foreground">
-                Change who reports to whom from the Login menu on each member
-                above. Managers see their team's tasks; juniors work and report
-                up the chain.
-              </p>
             </div>
           );
         })()}
+        <footer className="border-t border-border/60 px-5 py-2.5 text-xs text-muted-foreground">
+          Hover a person to move them (<GitBranch className="mb-0.5 inline size-3" />), add a
+          junior under them (<UserPlus className="mb-0.5 inline size-3" />) or reset their
+          password.
+        </footer>
       </section>
 
       {/* custom roles manager */}
