@@ -19,13 +19,20 @@ export type Role = Infer<typeof roleValidator>;
 // ── Settings / team roles ───────────────────────────────────────────────
 
 /**
- * App sections a user can be granted or denied. `true` = allowed, `false` =
- * denied. Missing keys default to allowed.
+ * Detailed app permissions. Per section (tasks / notes / costing) each
+ * action — view, create, edit, delete — can be explicitly allowed (`true`)
+ * or denied (`false`). Missing keys default to allowed.
  */
+export const sectionPermissionsValidator = v.object({
+  view: v.optional(v.boolean()),
+  create: v.optional(v.boolean()),
+  edit: v.optional(v.boolean()),
+  delete: v.optional(v.boolean()),
+});
 export const permissionsValidator = v.object({
-  tasks: v.optional(v.boolean()),
-  notes: v.optional(v.boolean()),
-  costing: v.optional(v.boolean()),
+  tasks: v.optional(sectionPermissionsValidator),
+  notes: v.optional(sectionPermissionsValidator),
+  costing: v.optional(sectionPermissionsValidator),
 });
 export type Permissions = Infer<typeof permissionsValidator>;
 

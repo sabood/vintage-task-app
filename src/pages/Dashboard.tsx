@@ -19,6 +19,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
+import type { ActionKey, SectionKey } from "@/lib/permissions";
 
 type Section = "tasks" | "notes" | "costing" | "settings";
 type NotebookId = Id<"notebooks">;
@@ -53,12 +54,18 @@ export default function Dashboard() {
   }, []);
   const myRole = myAccess?.role ?? "member";
   const canOpenSettings = myRole === "super" || myRole === "admin";
+  const perms = myAccess?.permissions as
+    | Record<SectionKey, Partial<Record<ActionKey, boolean>>>
+    | undefined;
+  /** Granular check: can the signed-in user do `action` in `section`? */
+  const canDo = (section: SectionKey, action: ActionKey): boolean => {
+    if (myRole === "super") return true;
+    return perms?.[section]?.[action] ?? true;
+  };
   const sectionAllowed = (s: Section): boolean => {
     if (s === "settings") return canOpenSettings;
     if (myRole === "super") return true;
-    const p = myAccess?.permissions;
-    if (!p) return true; // no explicit restrictions
-    return p[s] !== false;
+    return canDo(s, "view");
   };
   // If restrictions deny the current section, fall back to the first allowed.
   useEffect(() => {
@@ -618,9 +625,9 @@ export default function Dashboard() {
               loading={finishedGoods === undefined}
               view={costingView}
               onSelectView={setCostingView}
-              onNewFg={(p) => void handleNewFg(p)}
-              onRenameFg={(fg) => void handleRenameFg(fg)}
-              onDeleteFg={(fg) => void handleDeleteFg(fg)}
+              onNewFg={canDo("costing", "create") ? (p) => void handleNewFg(p) : undefined}
+              onRenameFg={canDo("costing", "edit") ? (fg) => void handleRenameFg(fg) : undefined}
+              onDeleteFg={canDo("costing", "delete") ? (fg) => void handleDeleteFg(fg) : undefined}
               onMaterialsClick={() => setCostingView({ kind: "materials" })}
             />
           ) : section === "tasks" ? (
@@ -631,12 +638,12 @@ export default function Dashboard() {
               loading={taskLists === undefined}
               activeView={activeTaskView}
               onSelectView={setActiveTaskView}
-              onNewList={handleNewList}
-              onRenameList={handleRenameList}
-              onDeleteList={handleDeleteList}
+              onNewList={canDo("tasks", "create") ? handleNewList : undefined}
+              onRenameList={canDo("tasks", "edit") ? handleRenameList : undefined}
+              onDeleteList={canDo("tasks", "delete") ? handleDeleteList : undefined}
               onMoveListToFolder={handleMoveListToFolder}
-              onNewFolder={handleNewFolder}
-              onDeleteFolder={handleDeleteFolder}
+              onNewFolder={canDo("tasks", "create") ? handleNewFolder : undefined}
+              onDeleteFolder={canDo("tasks", "delete") ? handleDeleteFolder : undefined}
             />
           ) : (
             <NotesSidebar
@@ -647,13 +654,13 @@ export default function Dashboard() {
             activePageId={activePage?._id ?? null}
             onSelectNotebook={handleSelectNotebook}
             onSelectPage={handleSelectPage}
-            onNewNotebook={handleNewNotebook}
-            onNewPage={(nbId) => void handleNewPage(nbId)}
-            onNewSubPage={(nbId, parentId) => void handleNewPage(nbId, parentId)}
-            onRenameNotebook={handleRenameNotebook}
-            onRenamePage={handleRenamePage}
-            onDeleteNotebook={handleDeleteNotebook}
-            onDeletePage={handleDeletePage}
+            onNewNotebook={canDo("notes", "create") ? handleNewNotebook : undefined}
+            onNewPage={canDo("notes", "create") ? (nbId) => void handleNewPage(nbId) : undefined}
+            onNewSubPage={canDo("notes", "create") ? (nbId, parentId) => void handleNewPage(nbId, parentId) : undefined}
+            onRenameNotebook={canDo("notes", "edit") ? handleRenameNotebook : undefined}
+            onRenamePage={canDo("notes", "edit") ? handleRenamePage : undefined}
+            onDeleteNotebook={canDo("notes", "delete") ? handleDeleteNotebook : undefined}
+            onDeletePage={canDo("notes", "delete") ? handleDeletePage : undefined}
           />
           )}
         </div>
@@ -774,12 +781,18 @@ export default function Dashboard() {
               onRenameFg={(fg) => void handleRenameFg(fg)}
               onDeleteFg={(fg) => void handleDeleteFg(fg)}
               onEditFg={(fg) => void handleEditFg(fg)}
+              canCreate={canDo("costing", "create")}
+              canEdit={canDo("costing", "edit")}
+              canDelete={canDo("costing", "delete")}
             />
           ) : section === "tasks" ? (
             <TasksPanel
               activeView={activeTaskView}
               lists={taskLists ?? []}
               onSelectView={setActiveTaskView}
+              canCreate={canDo("tasks", "create")}
+              canEdit={canDo("tasks", "edit")}
+              canDelete={canDo("tasks", "delete")}
             />
           ) : (
             <NotesPanel
@@ -788,6 +801,8 @@ export default function Dashboard() {
               onNewPage={() => handleNewPage()}
               onFlagTask={handleFlagTask}
               tasks={allTasks ?? []}
+              canCreate={canDo("notes", "create")}
+              canEdit={canDo("notes", "edit")}
             />
           )}
         </main>

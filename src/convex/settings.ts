@@ -3,6 +3,8 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { permissionsValidator } from "./schema";
+import type { ActionKey, GranularPerms, SectionKey } from "../lib/permissions";
+import { ACTIONS, SECTIONS } from "../lib/permissions";
 
 /**
  * Workspace roles:
@@ -56,7 +58,6 @@ async function getOrCreateSettings(
       {
         userId,
         role: "super",
-        permissions: { tasks: true, notes: true, costing: true },
         joinedAt: Date.now(),
       },
     ],
@@ -87,6 +88,26 @@ async function actorRole(
 ): Promise<WorkspaceRole | null> {
   const me = settingsDoc.members.find((m) => m.userId === userId);
   return (me?.role as WorkspaceRole) ?? null;
+}
+
+/** Merge custom-role perms with per-user overrides on every section/action. */
+function mergePerms(
+  base: GranularPerms | undefined,
+  override: GranularPerms | undefined,
+): GranularPerms | undefined {
+  if (base === undefined && override === undefined) return undefined;
+  const out: GranularPerms = {};
+  for (const s of SECTIONS) {
+    const merged: Record<string, boolean> = {};
+    for (const a of ACTIONS) {
+      const v = override?.[s]?.[a as ActionKey] ?? base?.[s]?.[a as ActionKey];
+      if (v !== undefined) merged[a] = v;
+    }
+    if (Object.keys(merged).length > 0) {
+      out[s] = merged as GranularPerms[SectionKey];
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 // ── Queries ─────────────────────────────────────────────────────────────
@@ -127,7 +148,6 @@ export const claimPendingInvite = mutation({
           userId,
           role: invite.role,
           customRoleId: invite.customRoleId,
-          permissions: { tasks: true, notes: true, costing: true },
           invitedBy: invite.ownerId,
           joinedAt: Date.now(),
         },
@@ -149,12 +169,12 @@ export const getMyAccess = query({
       return { role: "member" as WorkspaceRole, permissions: undefined, isSuper: false };
     }
     const me = settingsDoc.members.find((m) => m.userId === userId);
-    // Custom role: merge its permissions with any direct restrictions.
+    // Custom role: merge its permissions with any direct overrides.
     let permissions = me?.permissions ?? undefined;
     if (me?.customRoleId !== undefined) {
       const customRole = await ctx.db.get(me.customRoleId);
       if (customRole !== null) {
-        permissions = { ...(customRole.permissions ?? {}), ...(permissions ?? {}) };
+        permissions = mergePerms(customRole.permissions as GranularPerms | undefined, permissions);
       }
     }
     return {
@@ -193,11 +213,22 @@ export const listMembers = query({
     const rows = await Promise.all(
       settingsDoc.members.map(async (m) => {
         const user = await ctx.db.get(m.userId);
+        // Effective permissions = custom role + per-user overrides.
+        let effective = m.permissions as GranularPerms | undefined;
+        if (m.customRoleId !== undefined) {
+          const customRole = await ctx.db.get(m.customRoleId);
+          if (customRole !== null) {
+            effective = mergePerms(
+              customRole.permissions as GranularPerms | undefined,
+              effective,
+            );
+          }
+        }
         return {
           userId: m.userId,
           role: m.role as WorkspaceRole,
           customRoleId: m.customRoleId,
-          permissions: m.permissions ?? undefined,
+          permissions: effective,
           joinedAt: m.joinedAt,
           name: user?.name ?? undefined,
           email: user?.email ?? undefined,
@@ -274,7 +305,6 @@ export const inviteMember = mutation({
           userId: user._id,
           role,
           customRoleId,
-          permissions: { tasks: true, notes: true, costing: true },
           invitedBy: userId,
           joinedAt: Date.now(),
         },
@@ -530,9 +560,15 @@ export const setMemberPermission = mutation({
       v.literal("notes"),
       v.literal("costing"),
     ),
+    action: v.union(
+      v.literal("view"),
+      v.literal("create"),
+      v.literal("edit"),
+      v.literal("delete"),
+    ),
     allowed: v.boolean(),
   },
-  handler: async (ctx, { userId: targetId, section, allowed }) => {
+  handler: async (ctx, { userId: targetId, section, action, allowed }) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Sign in first.");
     const settingsDoc = await getOrCreateSettings(ctx, userId);
@@ -545,9 +581,49 @@ export const setMemberPermission = mutation({
     }
     const target = settingsDoc.members.find((m) => m.userId === targetId);
     if (!target) throw new Error("That user is not a member.");
-    const nextPermissions = {
+    const nextPermissions: GranularPerms = {
       ...(target.permissions ?? {}),
-      [section]: allowed,
+      [section]: {
+        ...(target.permissions?.[section as SectionKey] ?? {}),
+        [action]: allowed,
+      },
+    };
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.userId === targetId ? { ...m, permissions: nextPermissions } : m,
+      ),
+    });
+  },
+});
+
+/** Set a whole section block of permissions on a member at once. */
+export const setMemberSectionPermissions = mutation({
+  args: {
+    userId: v.id("users"),
+    section: v.union(
+      v.literal("tasks"),
+      v.literal("notes"),
+      v.literal("costing"),
+    ),
+    permissions: permissionsValidator,
+  },
+  handler: async (ctx, { userId: targetId, section, permissions }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getOrCreateSettings(ctx, userId);
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (!actor || (actor !== "super" && actor !== "admin")) {
+      throw new Error("Only the super user or an admin can change restrictions.");
+    }
+    if (targetId === settingsDoc.ownerId) {
+      throw new Error("The super user always has full access.");
+    }
+    const target = settingsDoc.members.find((m) => m.userId === targetId);
+    if (!target) throw new Error("That user is not a member.");
+    const sectionPerms = permissions[section as SectionKey];
+    const nextPermissions: GranularPerms = {
+      ...(target.permissions ?? {}),
+      [section]: sectionPerms ?? {},
     };
     await ctx.db.patch(settingsDoc._id, {
       members: settingsDoc.members.map((m) =>

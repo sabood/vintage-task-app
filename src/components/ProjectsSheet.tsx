@@ -38,7 +38,7 @@ export default function ProjectsSheet({
   finishedGoods: FgDoc[];
   loading: boolean;
   onOpenProject: (projectName: string) => void;
-  onNewProject: () => void;
+  onNewProject?: () => void;
 }) {
   const [search, setSearch] = useState("");
 
@@ -115,14 +115,16 @@ export default function ProjectsSheet({
   return (
     <div>
       {/* new project bar */}
-      <button
-        type="button"
-        onClick={onNewProject}
-        className="flex w-full items-center gap-1.5 rounded-xl border border-dashed bg-card/60 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Plus className="size-3.5" />
-        New project — creates its first product (FG) under it
-      </button>
+      {onNewProject && (
+        <button
+          type="button"
+          onClick={onNewProject}
+          className="flex w-full items-center gap-1.5 rounded-xl border border-dashed bg-card/60 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Plus className="size-3.5" />
+          New project — creates its first product (FG) under it
+        </button>
+      )}
 
       {/* listing sheet — same style as materials/products */}
       <section className="mt-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -220,15 +222,17 @@ export default function ProjectsSheet({
                         >
                           <Package className="size-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          aria-label={`New product under “${p.name}”`}
-                          title="New product under this project"
-                          className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
-                          onClick={() => onNewProject()}
-                        >
-                          <Sigma className="size-3.5" />
-                        </button>
+                        {onNewProject && (
+                          <button
+                            type="button"
+                            aria-label={`New product under “${p.name}”`}
+                            title="New product under this project"
+                            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
+                            onClick={() => onNewProject()}
+                          >
+                            <Sigma className="size-3.5" />
+                          </button>
+                        )}
                       </span>
                     </td>
                   </tr>

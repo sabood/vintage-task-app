@@ -53,6 +53,9 @@ export default function CostingPanel({
   onRenameFg,
   onDeleteFg,
   onEditFg,
+  canCreate = true,
+  canEdit = true,
+  canDelete = true,
 }: {
   materials: MaterialDoc[];
   finishedGoods: FgDoc[];
@@ -63,6 +66,9 @@ export default function CostingPanel({
   onRenameFg: (fg: FgDoc) => void;
   onDeleteFg: (fg: FgDoc) => void;
   onEditFg: (fg: FgDoc) => void;
+  canCreate?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }) {
   const [projectFocus, setProjectFocus] = useState<string | null>(null);
   const addFgItem = useMutation(api.costing.addFgItem);
@@ -496,7 +502,7 @@ export default function CostingPanel({
               setProjectFocus(name);
               onSelectView({ kind: "products" });
             }}
-            onNewProject={() => onNewFg("new")}
+            onNewProject={canCreate ? () => onNewFg("new") : undefined}
           />
         </div>
       ) : view?.kind === "fg" && activeFg ? (
@@ -571,15 +577,17 @@ export default function CostingPanel({
                 <p className="mt-0.5 truncate text-xs text-muted-foreground/80">{activeFg.note}</p>
               )}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-lg"
-              onClick={() => onEditFg(activeFg)}
-            >
-              Edit details
-            </Button>
+            {canEdit && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-lg"
+                onClick={() => onEditFg(activeFg)}
+              >
+                Edit details
+              </Button>
+            )}
           </div>
 
           {/* image lightbox */}
@@ -607,7 +615,7 @@ export default function CostingPanel({
           )}
 
           {/* add-row bars */}
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <div className={cn("mt-3 grid gap-2 md:grid-cols-2", !canCreate && "hidden")}>
             <div className="rounded-xl border bg-card p-3 shadow-sm">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 <Package className="size-3.5" />
@@ -766,28 +774,32 @@ export default function CostingPanel({
                         </td>
                         <td className="px-2 py-1 text-center">
                           <span className="hidden gap-0.5 group-hover/row:inline-flex">
-                            <button
-                              type="button"
-                              aria-label={`Edit ${row.label}`}
-                              title="Edit line"
-                              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
-                              onClick={() => void handleEditRow(row)}
-                            >
-                              <Pencil className="size-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Delete row"
-                              title="Delete line"
-                              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                void removeItem({ id: row._id }).catch(() =>
-                                  toast.error("Couldn't delete the row."),
-                                )
-                              }
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                aria-label={`Edit ${row.label}`}
+                                title="Edit line"
+                                className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
+                                onClick={() => void handleEditRow(row)}
+                              >
+                                <Pencil className="size-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                aria-label="Delete row"
+                                title="Delete line"
+                                className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive"
+                                onClick={() =>
+                                  void removeItem({ id: row._id }).catch(() =>
+                                    toast.error("Couldn't delete the row."),
+                                  )
+                                }
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
                           </span>
                         </td>
                       </tr>

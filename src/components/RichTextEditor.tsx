@@ -305,6 +305,7 @@ export function RichTextEditor({
   inkClass,
   onFormatStateChange,
   editorRef,
+  readOnly = false,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -315,6 +316,7 @@ export function RichTextEditor({
   inkClass?: string;
   onFormatStateChange?: (state: FormatState) => void;
   editorRef?: React.RefObject<HTMLDivElement | null>;
+  readOnly?: boolean;
 }) {
   const innerRef = useRef<HTMLDivElement>(null);
   const ref = editorRef ?? innerRef;
@@ -352,7 +354,7 @@ export function RichTextEditor({
   return (
     <div
       ref={ref}
-      contentEditable
+      contentEditable={!readOnly}
       suppressContentEditableWarning
       role="textbox"
       aria-multiline="true"

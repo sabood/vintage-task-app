@@ -40,9 +40,9 @@ export default function CostingSidebar({
   loading: boolean;
   view: CostingView;
   onSelectView: (view: CostingView) => void;
-  onNewFg: (projectName: string) => void;
-  onRenameFg: (fg: FgDoc) => void;
-  onDeleteFg: (fg: FgDoc) => void;
+  onNewFg?: (projectName: string) => void;
+  onRenameFg?: (fg: FgDoc) => void;
+  onDeleteFg?: (fg: FgDoc) => void;
   onMaterialsClick: () => void;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -145,15 +145,17 @@ export default function CostingSidebar({
         <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
           Products by project
         </span>
-        <button
-          type="button"
-          aria-label="New product"
-          title="New product"
-          className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          onClick={() => onNewFg("")}
-        >
-          <Plus className="size-3.5" />
-        </button>
+        {onNewFg && (
+          <button
+            type="button"
+            aria-label="New product"
+            title="New product"
+            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={() => onNewFg("")}
+          >
+            <Plus className="size-3.5" />
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -232,24 +234,28 @@ export default function CostingSidebar({
                         )}
                       </button>
                       <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within/fg:opacity-100 group-hover/fg:opacity-100">
-                        <button
-                          type="button"
-                          aria-label={`Rename “${fg.name}”`}
-                          title="Rename product"
-                          className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/fg:grid"
-                          onClick={() => onRenameFg(fg)}
-                        >
-                          <Pencil className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete “${fg.name}”`}
-                          title="Delete product"
-                          className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/fg:grid"
-                          onClick={() => onDeleteFg(fg)}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
+                        {onRenameFg && (
+                          <button
+                            type="button"
+                            aria-label={`Rename “${fg.name}”`}
+                            title="Rename product"
+                            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/fg:grid"
+                            onClick={() => onRenameFg(fg)}
+                          >
+                            <Pencil className="size-3" />
+                          </button>
+                        )}
+                        {onDeleteFg && (
+                          <button
+                            type="button"
+                            aria-label={`Delete “${fg.name}”`}
+                            title="Delete product"
+                            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/fg:grid"
+                            onClick={() => onDeleteFg(fg)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
                       </span>
                     </div>
                   );

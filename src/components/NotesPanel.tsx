@@ -101,10 +101,14 @@ function PageCanvas({
   page,
   onFlagTask,
   tasks,
+  canEdit = true,
+  canFlag = true,
 }: {
   page: Doc<"notePages">;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
   tasks: Doc<"tasks">[];
+  canEdit?: boolean;
+  canFlag?: boolean;
 }) {
   const updatePage = useMutation(api.notebooks.updatePage);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -194,6 +198,10 @@ function PageCanvas({
   };
 
   const handleFlagSelection = async () => {
+    if (!canFlag) {
+      toast.error("Creating tasks isn't allowed for your role.");
+      return;
+    }
     const text = window.getSelection()?.toString().trim() ?? "";
     if (!text) {
       toast.error("Select some letters first, then press Flag.");
@@ -465,6 +473,7 @@ function PageCanvas({
           <div className={drawMode || imageMode ? "pointer-events-none opacity-60" : ""}>
             <input
               value={title}
+              readOnly={!canEdit}
               onChange={(e) => {
                 setTitle(e.target.value);
                 scheduleSave({ title: e.target.value });
@@ -477,8 +486,9 @@ function PageCanvas({
             <div className="mt-2 mb-4 h-px w-12 bg-primary/50" />
             <RichTextEditor
               value={body}
-              onChange={handleBodyChange}
+              onChange={canEdit ? handleBodyChange : () => {}}
               editorRef={editorRef}
+              readOnly={!canEdit}
               placeholder="Start writing… select letters to format, press Flag for tasks, or insert pictures."
               fontClass="text-[15px]"
               onFormatStateChange={(state) => {
@@ -510,12 +520,16 @@ export default function NotesPanel({
   onNewPage,
   onFlagTask,
   tasks,
+  canCreate = true,
+  canEdit = true,
 }: {
   activePage: Doc<"notePages"> | null;
   pagesLoading: boolean;
   onNewPage: () => void;
   onFlagTask: (text: string, pageId: PageId) => Promise<void>;
   tasks: Doc<"tasks">[];
+  canCreate?: boolean;
+  canEdit?: boolean;
 }) {
   if (pagesLoading && !activePage) {
     return (
@@ -534,10 +548,12 @@ export default function NotesPanel({
         <p className="mt-1 text-sm text-muted-foreground">
           Pick a notebook and page from the explorer in the side menu.
         </p>
-        <Button onClick={onNewPage} className="mt-5 rounded-xl">
-          <Plus className="size-4" />
-          New page
-        </Button>
+        {canCreate && (
+          <Button onClick={onNewPage} className="mt-5 rounded-xl">
+            <Plus className="size-4" />
+            New page
+          </Button>
+        )}
       </div>
     );
   }
@@ -548,6 +564,8 @@ export default function NotesPanel({
       page={activePage}
       onFlagTask={onFlagTask}
       tasks={tasks}
+      canEdit={canEdit}
+      canFlag={canCreate}
     />
   );
 }

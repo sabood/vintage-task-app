@@ -43,12 +43,12 @@ export default function TasksSidebar({
   loading: boolean;
   activeView: ActiveTaskView;
   onSelectView: (view: ActiveTaskView) => void;
-  onNewList: () => void;
-  onRenameList: (list: Doc<"taskLists">) => void;
-  onDeleteList: (list: Doc<"taskLists">) => void;
+  onNewList?: () => void;
+  onRenameList?: (list: Doc<"taskLists">) => void;
+  onDeleteList?: (list: Doc<"taskLists">) => void;
   onMoveListToFolder: (list: Doc<"taskLists">) => void;
-  onNewFolder: () => void;
-  onDeleteFolder: (folder: Doc<"taskFolders">) => void;
+  onNewFolder?: () => void;
+  onDeleteFolder?: (folder: Doc<"taskFolders">) => void;
 }) {
   const openTasks = tasks.filter((t) => !t.isCompleted);
   const todayCount = openTasks.filter((t) => isDueToday(t) || isOverdue(t)).length;
@@ -97,24 +97,28 @@ export default function TasksSidebar({
           >
             <FolderInput className="size-3.5" />
           </button>
-          <button
-            type="button"
-            aria-label={`Rename list “${list.name}”`}
-            title="Rename list"
-            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/tl:grid"
-            onClick={() => onRenameList(list)}
-          >
-            <Pencil className="size-3" />
-          </button>
-          <button
-            type="button"
-            aria-label={`Delete list “${list.name}”`}
-            title="Delete list"
-            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/tl:grid"
-            onClick={() => onDeleteList(list)}
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          {onRenameList && (
+            <button
+              type="button"
+              aria-label={`Rename list “${list.name}”`}
+              title="Rename list"
+              className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/tl:grid"
+              onClick={() => onRenameList(list)}
+            >
+              <Pencil className="size-3" />
+            </button>
+          )}
+          {onDeleteList && (
+            <button
+              type="button"
+              aria-label={`Delete list “${list.name}”`}
+              title="Delete list"
+              className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/tl:grid"
+              onClick={() => onDeleteList(list)}
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
         </span>
       </div>
     );
@@ -168,15 +172,17 @@ export default function TasksSidebar({
         <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
           Lists
         </span>
-        <button
-          type="button"
-          aria-label="New list"
-          title="New list"
-          className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          onClick={onNewList}
-        >
-          <Plus className="size-3.5" />
-        </button>
+        {onNewList && (
+          <button
+            type="button"
+            aria-label="New list"
+            title="New list"
+            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={onNewList}
+          >
+            <Plus className="size-3.5" />
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -229,15 +235,17 @@ export default function TasksSidebar({
                   <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     {folder.name}
                   </span>
-                  <button
-                    type="button"
-                    aria-label={`Delete folder “${folder.name}”`}
-                    title="Delete folder (lists are kept)"
-                    className="hidden size-5 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/fd:grid"
-                    onClick={() => onDeleteFolder(folder)}
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
+                  {onDeleteFolder && (
+                    <button
+                      type="button"
+                      aria-label={`Delete folder “${folder.name}”`}
+                      title="Delete folder (lists are kept)"
+                      className="hidden size-5 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/fd:grid"
+                      onClick={() => onDeleteFolder(folder)}
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  )}
                 </div>
                 <div className="ml-3 border-l border-border/60 pl-1">
                   {folderLists.map(renderListRow)}
@@ -254,14 +262,16 @@ export default function TasksSidebar({
       )}
 
       {/* new folder */}
-      <button
-        type="button"
-        onClick={onNewFolder}
-        className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Plus className="size-3" />
-        New folder
-      </button>
+      {onNewFolder && (
+        <button
+          type="button"
+          onClick={onNewFolder}
+          className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Plus className="size-3" />
+          New folder
+        </button>
+      )}
 
       {/* lists not in a folder */}
       {folders.length > 0 && unfoldered.length > 0 && (

@@ -53,10 +53,16 @@ export default function TasksPanel({
   activeView,
   lists,
   onSelectView,
+  canCreate = true,
+  canEdit = true,
+  canDelete = true,
 }: {
   activeView: ActiveTaskView;
   lists: { _id: ListId; name: string }[];
   onSelectView: (view: ActiveTaskView) => void;
+  canCreate?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }) {
   const allTasks = useQuery(api.tasks.list);
   const allPages = useQuery(api.notebooks.listAllPages);
@@ -220,29 +226,35 @@ export default function TasksPanel({
         ))}
       </section>
 
-      {/* ── Add a task ──────────────────────────────────────────────── */}
-      <form onSubmit={handleAdd} className="mt-4 flex gap-2" onFocus={askNotificationPermission}>
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          maxLength={280}
-          placeholder={
-            activeList
-              ? `Add to “${activeList.name}”… use #tag for labels`
-              : "Add a task… #work for tags, “tomorrow 3pm” to schedule later"
-          }
-          aria-label="New task"
-          className="h-11 flex-1 rounded-xl bg-card shadow-sm placeholder:text-muted-foreground/70"
-        />
-        <Button
-          type="submit"
-          disabled={!draft.trim() || isAdding}
-          className="h-11 rounded-xl px-5 shadow-sm"
-        >
-          {isAdding ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-          Add task
-        </Button>
-      </form>
+      {/* ── Add a task ─────────────────────────────────────────── */}
+      {canCreate ? (
+        <form onSubmit={handleAdd} className="mt-4 flex gap-2" onFocus={askNotificationPermission}>
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={280}
+            placeholder={
+              activeList
+                ? `Add to “${activeList.name}”… use #tag for labels`
+                : "Add a task… #work for tags, “tomorrow 3pm” to schedule later"
+            }
+            aria-label="New task"
+            className="h-11 flex-1 rounded-xl bg-card shadow-sm placeholder:text-muted-foreground/70"
+          />
+          <Button
+            type="submit"
+            disabled={!draft.trim() || isAdding}
+            className="h-11 rounded-xl px-5 shadow-sm"
+          >
+            {isAdding ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            Add task
+          </Button>
+        </form>
+      ) : (
+        <p className="mt-4 rounded-xl border border-dashed bg-card px-4 py-3 text-center text-sm text-muted-foreground">
+          You can view tasks, but creating new ones isn't allowed for your role.
+        </p>
+      )}
 
       {/* ── Sort / filter controls ──────────────────────────────────── */}
       <div className="mt-3 flex items-center justify-between gap-2">
@@ -337,6 +349,7 @@ export default function TasksPanel({
                       <div className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
                         <Checkbox
                           checked={task.isCompleted}
+                          disabled={!canEdit}
                           onCheckedChange={() => void handleToggle(task._id)}
                           aria-label={
                             task.isCompleted
@@ -468,15 +481,17 @@ export default function TasksPanel({
                           >
                             <Star className={cn("size-4", task.starred && "fill-amber-400")} />
                           </button>
-                          <button
-                            type="button"
-                            aria-label="Delete task"
-                            title="Delete"
-                            className="hidden size-7 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/task:grid"
-                            onClick={() => void handleDelete(task._id)}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              aria-label="Delete task"
+                              title="Delete"
+                              className="hidden size-7 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/task:grid"
+                              onClick={() => void handleDelete(task._id)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
                           <ChevronDown
                             className={cn(
                               "size-4 text-muted-foreground/60 transition-transform",
@@ -496,6 +511,8 @@ export default function TasksPanel({
               <TaskDetail
                 task={openTask}
                 lists={lists}
+                canEdit={canEdit}
+                canDelete={canDelete}
                 onClose={() => setOpenTaskId(null)}
               />
             )}

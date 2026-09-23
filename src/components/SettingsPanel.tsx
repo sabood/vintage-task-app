@@ -1,5 +1,5 @@
 import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,10 +20,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useAppDialogs } from "@/components/AppDialogs";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import {
+  ACTION_DESCRIPTIONS,
+  ACTIONS,
+  type ActionKey,
+  SECTIONS,
+  SECTION_LABELS,
+  type SectionKey,
+} from "@/lib/permissions";
 import {
   Calculator,
   CheckSquare,
@@ -36,6 +42,7 @@ import {
   Pencil,
   Settings as SettingsIcon,
   ShieldCheck,
+  SlidersHorizontal,
   Tags,
   Trash2,
   UserPlus,
@@ -48,13 +55,18 @@ import { toast } from "sonner";
 
 type Role = "super" | "admin" | "user" | "member";
 type AssignableRole = Exclude<Role, "super">;
-type SectionKey = "tasks" | "notes" | "costing";
+
+type GranularPerms = {
+  tasks?: Partial<Record<ActionKey, boolean>>;
+  notes?: Partial<Record<ActionKey, boolean>>;
+  costing?: Partial<Record<ActionKey, boolean>>;
+};
 
 type Member = {
   userId: Id<"users">;
   role: Role;
   customRoleId?: Id<"customRoles">;
-  permissions?: { tasks?: boolean; notes?: boolean; costing?: boolean };
+  permissions?: GranularPerms;
   joinedAt: number;
   name?: string;
   email?: string;
@@ -65,7 +77,7 @@ type CustomRole = {
   _id: Id<"customRoles">;
   name: string;
   description?: string;
-  permissions?: { tasks?: boolean; notes?: boolean; costing?: boolean };
+  permissions?: GranularPerms;
   createdAt: number;
 };
 
@@ -100,60 +112,124 @@ const ROLE_META: Record<Role, { label: string; chip: string; blurb: string }> = 
   },
 };
 
-const SECTIONS: { key: SectionKey; label: string; icon: typeof CheckSquare }[] = [
-  { key: "tasks", label: "Tasks", icon: CheckSquare },
-  { key: "notes", label: "Notes", icon: NotebookPen },
-  { key: "costing", label: "Costing", icon: Calculator },
-];
+const SECTION_ICONS: Record<SectionKey, typeof CheckSquare> = {
+  tasks: CheckSquare,
+  notes: NotebookPen,
+  costing: Calculator,
+};
 
 const ASSIGNABLE: AssignableRole[] = ["admin", "user", "member"];
 
-/** Section access switch pair: allow (eye) vs restrict (eye-off). */
-function SectionToggles({
-  member,
-  sectionKey,
-  label,
-  icon: Icon,
-  onToggle,
+const allAllowed = (): Record<SectionKey, Record<ActionKey, boolean>> => ({
+  tasks: { view: true, create: true, edit: true, delete: true },
+  notes: { view: true, create: true, edit: true, delete: true },
+  costing: { view: true, create: true, edit: true, delete: true },
+});
+
+const fromPerms = (perms: GranularPerms | undefined) => ({
+  tasks: {
+    view: perms?.tasks?.view ?? true,
+    create: perms?.tasks?.create ?? true,
+    edit: perms?.tasks?.edit ?? true,
+    delete: perms?.tasks?.delete ?? true,
+  },
+  notes: {
+    view: perms?.notes?.view ?? true,
+    create: perms?.notes?.create ?? true,
+    edit: perms?.notes?.edit ?? true,
+    delete: perms?.notes?.delete ?? true,
+  },
+  costing: {
+    view: perms?.costing?.view ?? true,
+    create: perms?.costing?.create ?? true,
+    edit: perms?.costing?.edit ?? true,
+    delete: perms?.costing?.delete ?? true,
+  },
+});
+
+/** Compact summary of a permission set, e.g. "Tasks: full · Notes: view+create". */
+function permsSummary(perms: GranularPerms | undefined): string {
+  const parts = SECTIONS.map((s) => {
+    const denied = ACTIONS.filter((a) => perms?.[s]?.[a] === false);
+    if (denied.length === 0) return `${SECTION_LABELS[s]}: full`;
+    if (denied.length === ACTIONS.length) return `${SECTION_LABELS[s]}: none`;
+    const allowed = ACTIONS.filter((a) => !denied.includes(a));
+    return `${SECTION_LABELS[s]}: ${allowed.join("+")}`;
+  });
+  return parts.join(" · ");
+}
+
+/** One section block of the permission matrix (View / Create / Edit / Delete). */
+function SectionMatrix({
+  perms,
+  onChange,
+  disabled,
 }: {
-  member: Member;
-  sectionKey: SectionKey;
-  label: string;
-  icon: typeof CheckSquare;
-  onToggle: (m: Member, s: SectionKey, allowed: boolean) => void;
+  perms: Partial<Record<ActionKey, boolean>>;
+  onChange: (action: ActionKey, allowed: boolean) => void;
+  disabled?: boolean;
 }) {
-  const allowed = member.isSuper ? true : (member.permissions?.[sectionKey] ?? true);
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-colors",
-        allowed ? "border-border bg-background" : "border-destructive/30 bg-destructive/5",
-      )}
-    >
-      <Icon className={cn("size-3.5", allowed ? "text-muted-foreground" : "text-destructive")} />
-      <span className="text-[11px] font-medium">{label}</span>
-      {member.isSuper ? (
-        <Badge variant="secondary" className="rounded-full px-1.5 py-0 text-[9px]">
-          always
-        </Badge>
-      ) : (
-        <button
-          type="button"
-          role="switch"
-          aria-checked={allowed}
-          aria-label={`${allowed ? "Restrict" : "Allow"} ${label} for this user`}
-          title={allowed ? "Click to restrict" : "Click to allow"}
-          onClick={() => onToggle(member, sectionKey, !allowed)}
-          className={cn(
-            "grid size-5 place-items-center rounded-md transition-colors",
-            allowed
-              ? "text-emerald-600 hover:bg-emerald-500/10"
-              : "text-destructive hover:bg-destructive/10",
-          )}
-        >
-          {allowed ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-        </button>
-      )}
+    <div className="grid grid-cols-4 gap-1.5">
+      {ACTIONS.map((action) => {
+        const allowed = perms[action] ?? true;
+        return (
+          <button
+            key={action}
+            type="button"
+            disabled={disabled}
+            title={ACTION_DESCRIPTIONS[action]}
+            aria-pressed={allowed}
+            onClick={() => onChange(action, !allowed)}
+            className={cn(
+              "flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-[10px] font-medium transition-colors",
+              allowed
+                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+                : "border-destructive/30 bg-destructive/5 text-destructive",
+              !disabled && "hover:brightness-95",
+              disabled && "cursor-not-allowed opacity-60",
+            )}
+          >
+            {allowed ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            {action.charAt(0).toUpperCase() + action.slice(1)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Full permission matrix across all sections. */
+function PermissionMatrix({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Record<SectionKey, Record<ActionKey, boolean>>;
+  onChange: (section: SectionKey, action: ActionKey, allowed: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-2.5">
+      {SECTIONS.map((s) => {
+        const Icon = SECTION_ICONS[s];
+        return (
+          <div key={s} className="rounded-xl border px-3 py-2.5">
+            <div className="mb-2 flex items-center gap-2">
+              <Icon className="size-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{SECTION_LABELS[s]}</span>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                Tap a box to allow / restrict
+              </span>
+            </div>
+            <SectionMatrix
+              perms={value[s]}
+              disabled={disabled}
+              onChange={(a, allowed) => onChange(s, a, allowed)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -169,7 +245,9 @@ export default function SettingsPanel() {
   const inviteMember = useMutation(api.settings.inviteMember);
   const setMemberRole = useMutation(api.settings.setMemberRole);
   const setMemberCustomRole = useMutation(api.settings.setMemberCustomRole);
-  const setMemberPermission = useMutation(api.settings.setMemberPermission);
+  const setMemberSectionPermissions = useMutation(
+    api.settings.setMemberSectionPermissions,
+  );
   const removeMember = useMutation(api.settings.removeMember);
   const setWorkspaceName = useMutation(api.settings.setWorkspaceName);
   const cancelPendingInvite = useMutation(api.settings.cancelPendingInvite);
@@ -190,11 +268,11 @@ export default function SettingsPanel() {
   const [editingRoleId, setEditingRoleId] = useState<Id<"customRoles"> | null>(null);
   const [roleName, setRoleName] = useState("");
   const [roleDescription, setRoleDescription] = useState("");
-  const [rolePerms, setRolePerms] = useState<Record<SectionKey, boolean>>({
-    tasks: true,
-    notes: true,
-    costing: true,
-  });
+  const [rolePerms, setRolePerms] = useState(allAllowed());
+
+  // per-user detailed permissions dialog
+  const [permMember, setPermMember] = useState<Member | null>(null);
+  const [permDraft, setPermDraft] = useState(allAllowed());
 
   if (myAccess === undefined) {
     return (
@@ -224,6 +302,7 @@ export default function SettingsPanel() {
   const resetAddDialog = () => {
     setAddEmail("");
     setAddRole("user");
+    setAddCustomRoleId(null);
   };
 
   const submitInvite = async () => {
@@ -257,31 +336,22 @@ export default function SettingsPanel() {
     }
   };
 
-  const openRoleEditor = (role?: CustomRole) => {
-    if (role) {
-      setEditingRoleId(role._id);
-      setRoleName(role.name);
-      setRoleDescription(role.description ?? "");
-      setRolePerms({
-        tasks: role.permissions?.tasks ?? true,
-        notes: role.permissions?.notes ?? true,
-        costing: role.permissions?.costing ?? true,
-      });
+  const openRoleEditor = (r?: CustomRole) => {
+    if (r) {
+      setEditingRoleId(r._id);
+      setRoleName(r.name);
+      setRoleDescription(r.description ?? "");
+      setRolePerms(fromPerms(r.permissions));
     } else {
       setEditingRoleId(null);
       setRoleName("");
       setRoleDescription("");
-      setRolePerms({ tasks: true, notes: true, costing: true });
+      setRolePerms(allAllowed());
     }
     setRoleEditorOpen(true);
   };
 
   const submitRole = async () => {
-    const perms = {
-      tasks: rolePerms.tasks,
-      notes: rolePerms.notes,
-      costing: rolePerms.costing,
-    };
     setBusy(true);
     try {
       if (editingRoleId !== null) {
@@ -289,14 +359,14 @@ export default function SettingsPanel() {
           id: editingRoleId,
           name: roleName,
           description: roleDescription,
-          permissions: perms,
+          permissions: rolePerms,
         });
         toast.success(`Role “${roleName}” updated.`);
       } else {
         await createCustomRole({
           name: roleName,
           description: roleDescription,
-          permissions: perms,
+          permissions: rolePerms,
         });
         toast.success(`Role “${roleName}” created.`);
       }
@@ -353,22 +423,32 @@ export default function SettingsPanel() {
     }
   };
 
-  const handleToggleSection = async (
-    member: Member,
-    section: SectionKey,
-    allowed: boolean,
-  ) => {
+  const openPermDialog = (m: Member) => {
+    setPermMember(m);
+    setPermDraft(fromPerms(m.permissions));
+  };
+
+  const submitMemberPerms = async () => {
+    if (permMember === null) return;
+    setBusy(true);
     try {
-      await setMemberPermission({ userId: member.userId, section, allowed });
+      for (const s of SECTIONS) {
+        await setMemberSectionPermissions({
+          userId: permMember.userId,
+          section: s,
+          permissions: { [s]: permDraft[s] } as GranularPerms,
+        });
+      }
       toast.success(
-        `${section[0]!.toUpperCase()}${section.slice(1)} ${
-          allowed ? "allowed" : "restricted"
-        } for ${member.name ?? member.email ?? "user"}.`,
+        `Permissions saved for ${permMember.name ?? permMember.email ?? "user"}.`,
       );
+      setPermMember(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Couldn't change the restriction.",
+        error instanceof Error ? error.message : "Couldn't save the permissions.",
       );
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -413,7 +493,8 @@ export default function SettingsPanel() {
             Settings
           </h1>
           <p className="mt-1 text-muted-foreground">
-            Create users, assign roles, and restrict what each person can open.
+            Create users, assign roles, and control exactly what each person can
+            view, create, edit, and delete.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -489,6 +570,13 @@ export default function SettingsPanel() {
                   {m.email && (
                     <p className="truncate text-xs text-muted-foreground">{m.email}</p>
                   )}
+                  {!m.isSuper && (
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+                      {m.customRoleId
+                        ? `Custom role · ${permsSummary(m.permissions)}`
+                        : permsSummary(m.permissions)}
+                    </p>
+                  )}
                 </div>
 
                 {/* role selector */}
@@ -500,7 +588,7 @@ export default function SettingsPanel() {
                     )}
                     title={ROLE_META.super.blurb}
                   >
-                    Super user
+                    Super user — full access
                   </span>
                 ) : (
                   <DropdownMenu>
@@ -568,31 +656,29 @@ export default function SettingsPanel() {
                   </DropdownMenu>
                 )}
 
-                {/* restrictions */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {SECTIONS.map(({ key, label, icon }) => (
-                    <SectionToggles
-                      key={key}
-                      member={m}
-                      sectionKey={key}
-                      label={label}
-                      icon={icon}
-                      onToggle={handleToggleSection}
-                    />
-                  ))}
-                </div>
-
                 {/* actions */}
-                {!m.isSuper && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => void handleRemove(m)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                )}
+                <div className="flex items-center gap-1">
+                  {!m.isSuper && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openPermDialog(m)}
+                    >
+                      <SlidersHorizontal className="size-3.5" />
+                      Permissions
+                    </Button>
+                  )}
+                  {!m.isSuper && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => void handleRemove(m)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -621,8 +707,9 @@ export default function SettingsPanel() {
           </div>
         ) : (customRoles ?? []).length === 0 ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">
-            No custom roles yet. Create one to bundle section access (e.g.
-            “Storekeeper” with only Costing enabled) and assign it to any user.
+            No custom roles yet. Create one to bundle detailed permissions (e.g.
+            “Storekeeper” who can view and create materials but not delete them)
+            and assign it to any user.
           </p>
         ) : (
           <ul className="divide-y">
@@ -631,10 +718,7 @@ export default function SettingsPanel() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{r.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {r.description || "Custom role"} ·{" "}
-                    {SECTIONS.filter(({ key }) => r.permissions?.[key] ?? true)
-                      .map(({ label }) => label)
-                      .join(", ") || "No sections"}
+                    {r.description || "Custom role"} · {permsSummary(r.permissions)}
                   </p>
                 </div>
                 <Button
@@ -706,9 +790,10 @@ export default function SettingsPanel() {
 
       <p className="text-xs text-muted-foreground">
         <strong>Super user</strong> — full control (created automatically, one per
-        workspace). <strong>Admin</strong> — can add users and change roles.{" "}
-        <strong>User</strong> — normal access. <strong>Member</strong> — limited
-        access. Use the eye buttons to allow or restrict each section per user.
+        workspace). <strong>Admin</strong> — can add users and change roles. Use{" "}
+        <strong>Roles</strong> to build reusable permission sets, and{" "}
+        <strong>Permissions</strong> on a user for individual overrides (they
+        layer on top of the assigned role).
       </p>
 
       {/* add-user dialog */}
@@ -720,8 +805,8 @@ export default function SettingsPanel() {
               Add a user
             </DialogTitle>
             <DialogDescription>
-              Add a person who has already signed in to the app, then pick their
-              role and restrictions.
+              Add a person by email, then pick their role. Fine-tune their
+              detailed permissions afterwards with the Permissions button.
             </DialogDescription>
           </DialogHeader>
 
@@ -837,14 +922,15 @@ export default function SettingsPanel() {
 
       {/* role editor dialog (create + edit) */}
       <Dialog open={roleEditorOpen} onOpenChange={setRoleEditorOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Tags className="size-4 text-primary" />
               {editingRoleId !== null ? "Edit role" : "Create role"}
             </DialogTitle>
             <DialogDescription>
-              Name the role and pick which sections people with it can open.
+              Name the role and set exactly what people with it can view,
+              create, edit, and delete in each section.
             </DialogDescription>
           </DialogHeader>
 
@@ -869,27 +955,13 @@ export default function SettingsPanel() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Section access</Label>
-              <div className="grid gap-1.5">
-                {SECTIONS.map(({ key, label, icon: Icon }) => (
-                  <label
-                    key={key}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors hover:bg-accent"
-                  >
-                    <Checkbox
-                      checked={rolePerms[key]}
-                      onCheckedChange={(v) =>
-                        setRolePerms((p) => ({ ...p, [key]: v === true }))
-                      }
-                    />
-                    <Icon className="size-4 text-muted-foreground" />
-                    <span className="text-sm">{label}</span>
-                    <span className="ml-auto text-[10px] text-muted-foreground">
-                      {rolePerms[key] ? "Allowed" : "Restricted"}
-                    </span>
-                  </label>
-                ))}
-              </div>
+              <Label>Detailed permissions</Label>
+              <PermissionMatrix
+                value={rolePerms}
+                onChange={(s, a, allowed) =>
+                  setRolePerms((p) => ({ ...p, [s]: { ...p[s], [a]: allowed } }))
+                }
+              />
             </div>
           </div>
 
@@ -900,6 +972,43 @@ export default function SettingsPanel() {
             <Button onClick={() => void submitRole()} disabled={busy || roleName.trim() === ""}>
               {busy && <Loader2 className="size-4 animate-spin" />}
               {editingRoleId !== null ? "Save changes" : "Create role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* per-user detailed permissions dialog */}
+      <Dialog
+        open={permMember !== null}
+        onOpenChange={(open) => !open && setPermMember(null)}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="size-4 text-primary" />
+              Permissions — {permMember?.name ?? permMember?.email ?? "user"}
+            </DialogTitle>
+            <DialogDescription>
+              {permMember?.customRoleId
+                ? "These overrides layer on top of the assigned custom role."
+                : "Set exactly what this user can view, create, edit, and delete."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <PermissionMatrix
+            value={permDraft}
+            onChange={(s, a, allowed) =>
+              setPermDraft((p) => ({ ...p, [s]: { ...p[s], [a]: allowed } }))
+            }
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPermMember(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitMemberPerms()} disabled={busy}>
+              {busy && <Loader2 className="size-4 animate-spin" />}
+              Save permissions
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -59,13 +59,13 @@ export default function NotesSidebar({
   activePageId: PageId | null;
   onSelectNotebook: (id: NotebookId) => void;
   onSelectPage: (notebookId: NotebookId, pageId: PageId) => void;
-  onNewNotebook: () => void;
-  onNewPage: (notebookId: NotebookId) => void;
-  onNewSubPage: (notebookId: NotebookId, parentId: PageId) => void;
-  onRenameNotebook: (nb: Doc<"notebooks">) => void;
-  onRenamePage: (page: Doc<"notePages">) => void;
-  onDeleteNotebook: (nb: Doc<"notebooks">) => void;
-  onDeletePage: (page: Doc<"notePages">) => void;
+  onNewNotebook?: () => void;
+  onNewPage?: (notebookId: NotebookId) => void;
+  onNewSubPage?: (notebookId: NotebookId, parentId: PageId) => void;
+  onRenameNotebook?: (nb: Doc<"notebooks">) => void;
+  onRenamePage?: (page: Doc<"notePages">) => void;
+  onDeleteNotebook?: (nb: Doc<"notebooks">) => void;
+  onDeletePage?: (page: Doc<"notePages">) => void;
 }) {
   // Rows are open by default; this set tracks explicitly collapsed ones.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -91,15 +91,17 @@ export default function NotesSidebar({
         <span className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
           Notebooks
         </span>
-        <button
-          type="button"
-          aria-label="New notebook"
-          title="New notebook"
-          className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          onClick={onNewNotebook}
-        >
-          <Plus className="size-3.5" />
-        </button>
+        {onNewNotebook && (
+          <button
+            type="button"
+            aria-label="New notebook"
+            title="New notebook"
+            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={onNewNotebook}
+          >
+            <Plus className="size-3.5" />
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -160,33 +162,39 @@ export default function NotesSidebar({
                 </span>
               </button>
               <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within/nb:opacity-100 group-hover/nb:opacity-100">
-                <button
-                  type="button"
-                  aria-label={`New page in “${nb.title}”`}
-                  title="New page"
-                  className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/nb:grid"
-                  onClick={() => onNewPage(nb._id)}
-                >
-                  <Plus className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Rename notebook “${nb.title}”`}
-                  title="Rename notebook"
-                  className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/nb:grid"
-                  onClick={() => onRenameNotebook(nb)}
-                >
-                  <Pencil className="size-3" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete notebook “${nb.title}”`}
-                  title="Delete notebook"
-                  className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/nb:grid"
-                  onClick={() => onDeleteNotebook(nb)}
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+                {onNewPage && (
+                  <button
+                    type="button"
+                    aria-label={`New page in “${nb.title}”`}
+                    title="New page"
+                    className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/nb:grid"
+                    onClick={() => onNewPage(nb._id)}
+                  >
+                    <Plus className="size-3.5" />
+                  </button>
+                )}
+                {onRenameNotebook && (
+                  <button
+                    type="button"
+                    aria-label={`Rename notebook “${nb.title}”`}
+                    title="Rename notebook"
+                    className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/nb:grid"
+                    onClick={() => onRenameNotebook(nb)}
+                  >
+                    <Pencil className="size-3" />
+                  </button>
+                )}
+                {onDeleteNotebook && (
+                  <button
+                    type="button"
+                    aria-label={`Delete notebook “${nb.title}”`}
+                    title="Delete notebook"
+                    className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/nb:grid"
+                    onClick={() => onDeleteNotebook(nb)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
               </span>
             </div>
 
@@ -251,33 +259,39 @@ export default function NotesSidebar({
                           </span>
                         </button>
                         <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within/pg:opacity-100 group-hover/pg:opacity-100">
-                          <button
-                            type="button"
-                            aria-label={`New sub-page under “${page.title}”`}
-                            title="New sub-page"
-                            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/pg:grid"
-                            onClick={() => onNewSubPage(nb._id, page._id)}
-                          >
-                            <Plus className="size-3" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Rename page “${page.title}”`}
-                            title="Rename page"
-                            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/pg:grid"
-                            onClick={() => onRenamePage(page)}
-                          >
-                            <Pencil className="size-3" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Delete page “${page.title}”`}
-                            title="Delete page"
-                            className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/pg:grid"
-                            onClick={() => onDeletePage(page)}
-                          >
-                            <Trash2 className="size-3" />
-                          </button>
+                          {onNewSubPage && (
+                            <button
+                              type="button"
+                              aria-label={`New sub-page under “${page.title}”`}
+                              title="New sub-page"
+                              className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/pg:grid"
+                              onClick={() => onNewSubPage(nb._id, page._id)}
+                            >
+                              <Plus className="size-3" />
+                            </button>
+                          )}
+                          {onRenamePage && (
+                            <button
+                              type="button"
+                              aria-label={`Rename page “${page.title}”`}
+                              title="Rename page"
+                              className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/pg:grid"
+                              onClick={() => onRenamePage(page)}
+                            >
+                              <Pencil className="size-3" />
+                            </button>
+                          )}
+                          {onDeletePage && (
+                            <button
+                              type="button"
+                              aria-label={`Delete page “${page.title}”`}
+                              title="Delete page"
+                              className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/pg:grid"
+                              onClick={() => onDeletePage(page)}
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
+                          )}
                         </span>
                       </div>
 
@@ -316,24 +330,28 @@ export default function NotesSidebar({
                                 </span>
                               </button>
                               <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within/sp:opacity-100 group-hover/sp:opacity-100">
-                                <button
-                                  type="button"
-                                  aria-label={`Rename sub-page “${sp.title}”`}
-                                  title="Rename sub-page"
-                                  className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/sp:grid"
-                                  onClick={() => onRenamePage(sp)}
-                                >
-                                  <Pencil className="size-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label={`Delete sub-page “${sp.title}”`}
-                                  title="Delete sub-page"
-                                  className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/sp:grid"
-                                  onClick={() => onDeletePage(sp)}
-                                >
-                                  <Trash2 className="size-3" />
-                                </button>
+                                {onRenamePage && (
+                                  <button
+                                    type="button"
+                                    aria-label={`Rename sub-page “${sp.title}”`}
+                                    title="Rename sub-page"
+                                    className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-foreground group-hover/sp:grid"
+                                    onClick={() => onRenamePage(sp)}
+                                  >
+                                    <Pencil className="size-3" />
+                                  </button>
+                                )}
+                                {onDeletePage && (
+                                  <button
+                                    type="button"
+                                    aria-label={`Delete sub-page “${sp.title}”`}
+                                    title="Delete sub-page"
+                                    className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive group-hover/sp:grid"
+                                    onClick={() => onDeletePage(sp)}
+                                  >
+                                    <Trash2 className="size-3" />
+                                  </button>
+                                )}
                               </span>
                             </div>
                           );
@@ -342,14 +360,16 @@ export default function NotesSidebar({
                   );
                 })}
                 {/* add page inline */}
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-1.5 rounded-lg py-1.5 pl-6 pr-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  onClick={() => onNewPage(nb._id)}
-                >
-                  <Plus className="size-3.5" />
-                  Add page
-                </button>
+                {onNewPage && (
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-1.5 rounded-lg py-1.5 pl-6 pr-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    onClick={() => onNewPage(nb._id)}
+                  >
+                    <Plus className="size-3.5" />
+                    Add page
+                  </button>
+                )}
               </div>
             )}
           </div>

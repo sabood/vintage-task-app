@@ -80,10 +80,14 @@ const chipBase =
 export default function TaskDetail({
   task,
   lists,
+  canEdit = true,
+  canDelete = true,
   onClose,
 }: {
   task: TaskDoc;
   lists: { _id: Id<"taskLists">; name: string }[];
+  canEdit?: boolean;
+  canDelete?: boolean;
   onClose: () => void;
 }) {
   const toggleTask = useMutation(api.tasks.toggle);
@@ -255,6 +259,7 @@ export default function TaskDetail({
                 task.starred ? "text-amber-500" : "text-muted-foreground",
               )}
               onClick={() =>
+                canEdit &&
                 void updateTask({ id: task._id, starred: !task.starred }).catch(() =>
                   toast.error("Couldn't update the star."),
                 )
@@ -279,12 +284,15 @@ export default function TaskDetail({
           <div className="flex items-start gap-2.5">
             <Checkbox
               checked={task.isCompleted}
+              disabled={!canEdit}
               onCheckedChange={() => void toggleTask({ id: task._id })}
               className="mt-1 size-5 shrink-0 rounded-full border-2 border-border data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground [&_svg]:size-3"
             />
             <input
               value={task.text}
+              readOnly={!canEdit}
               onChange={(e) =>
+                canEdit &&
                 void updateTask({ id: task._id, text: e.target.value }).catch(() => {})
               }
               className={cn(
@@ -587,16 +595,23 @@ export default function TaskDetail({
 
         {/* footer */}
         <div className="border-t border-border/60 p-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start rounded-lg text-destructive hover:text-destructive"
-            onClick={() => void handleDelete()}
-          >
-            <Trash2 className="size-3.5" />
-            Delete task
-          </Button>
+          {canDelete ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start rounded-lg text-destructive hover:text-destructive"
+              onClick={() => void handleDelete()}
+            >
+              <Trash2 className="size-3.5" />
+              Delete task
+            </Button>
+          ) : (
+            <p className="px-2 text-xs text-muted-foreground">
+              You have view access to this task; editing and deleting are
+              restricted for your role.
+            </p>
+          )}
         </div>
       </div>
     </aside>
