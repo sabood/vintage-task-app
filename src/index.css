@@ -277,6 +277,129 @@
   --sidebar-ring: oklch(0.488 0.243 264.376);
 }
 
+/* ── Color themes (picked in Settings → Appearance) ─────────────────────
+   Layered on top of light/dark via data-theme on <html>. Only the accent
+   palette (primary/ring/charts/sidebar) changes — background, text and
+   surfaces stay neutral so every theme is readable in both modes.       */
+[data-theme="forest"] {
+  --primary: oklch(0.527 0.154 150.069);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.627 0.194 149.214);
+  --chart-1: oklch(0.627 0.194 149.214);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.508 0.118 165.612);
+  --chart-5: oklch(0.606 0.25 292.717);
+  --sidebar-primary: oklch(0.527 0.154 150.069);
+  --sidebar-ring: oklch(0.627 0.194 149.214);
+}
+.dark[data-theme="forest"],
+.dark [data-theme="forest"] {
+  --primary: oklch(0.696 0.17 162.48);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.627 0.194 149.214);
+  --chart-1: oklch(0.696 0.17 162.48);
+  --chart-2: oklch(0.527 0.154 150.069);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.596 0.145 163.225);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar-primary: oklch(0.696 0.17 162.48);
+  --sidebar-ring: oklch(0.627 0.194 149.214);
+}
+
+[data-theme="ocean"] {
+  --primary: oklch(0.6 0.118 184.704);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.704 0.14 182.503);
+  --chart-1: oklch(0.704 0.14 182.503);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.637 0.237 25.331);
+  --chart-4: oklch(0.666 0.179 58.318);
+  --chart-5: oklch(0.596 0.145 163.225);
+  --sidebar-primary: oklch(0.6 0.118 184.704);
+  --sidebar-ring: oklch(0.704 0.14 182.503);
+}
+.dark[data-theme="ocean"],
+.dark [data-theme="ocean"] {
+  --primary: oklch(0.704 0.14 182.503);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.704 0.14 182.503);
+  --chart-1: oklch(0.704 0.14 182.503);
+  --chart-2: oklch(0.596 0.145 163.225);
+  --chart-3: oklch(0.637 0.237 25.331);
+  --chart-4: oklch(0.666 0.179 58.318);
+  --chart-5: oklch(0.6 0.118 184.704);
+  --sidebar-primary: oklch(0.704 0.14 182.503);
+  --sidebar-ring: oklch(0.704 0.14 182.503);
+}
+
+[data-theme="sunset"] {
+  --primary: oklch(0.646 0.222 41.116);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.666 0.179 58.318);
+  --chart-1: oklch(0.666 0.179 58.318);
+  --chart-2: oklch(0.646 0.222 41.116);
+  --chart-3: oklch(0.746 0.16 232.661);
+  --chart-4: oklch(0.645 0.246 16.439);
+  --chart-5: oklch(0.627 0.194 149.214);
+  --sidebar-primary: oklch(0.646 0.222 41.116);
+  --sidebar-ring: oklch(0.666 0.179 58.318);
+}
+.dark[data-theme="sunset"],
+.dark [data-theme="sunset"] {
+  --primary: oklch(0.705 0.213 47.604);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.705 0.213 47.604);
+  --chart-1: oklch(0.705 0.213 47.604);
+  --chart-2: oklch(0.645 0.246 16.439);
+  --chart-3: oklch(0.746 0.16 232.661);
+  --chart-4: oklch(0.666 0.179 58.318);
+  --chart-5: oklch(0.627 0.194 149.214);
+  --sidebar-primary: oklch(0.705 0.213 47.604);
+  --sidebar-ring: oklch(0.705 0.213 47.604);
+}
+
+[data-theme="rose"] {
+  --primary: oklch(0.586 0.253 17.075);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.645 0.246 16.439);
+  --chart-1: oklch(0.645 0.246 16.439);
+  --chart-2: oklch(0.586 0.253 17.075);
+  --chart-3: oklch(0.596 0.145 163.225);
+  --chart-4: oklch(0.666 0.179 58.318);
+  --chart-5: oklch(0.606 0.25 292.717);
+  --sidebar-primary: oklch(0.586 0.253 17.075);
+  --sidebar-ring: oklch(0.645 0.246 16.439);
+}
+.dark[data-theme="rose"],
+.dark [data-theme="rose"] {
+  --primary: oklch(0.645 0.246 16.439);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.645 0.246 16.439);
+  --chart-1: oklch(0.645 0.246 16.439);
+  --chart-2: oklch(0.705 0.213 47.604);
+  --chart-3: oklch(0.596 0.145 163.225);
+  --chart-4: oklch(0.666 0.179 58.318);
+  --chart-5: oklch(0.606 0.25 292.717);
+  --sidebar-primary: oklch(0.645 0.246 16.439);
+  --sidebar-ring: oklch(0.645 0.246 16.439);
+}
+
+/* Smooth color transitions when switching theme or mode */
+@layer base {
+  html {
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  body,
+  .bg-card,
+  .border,
+  [class*="bg-"],
+  [class*="text-"],
+  [class*="border"] {
+    transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

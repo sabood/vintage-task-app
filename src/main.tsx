@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppDialogsProvider } from "@/components/AppDialogs";
 import { RequireAuth } from "@/components/RequireAuth";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
+import { ThemeProvider } from "next-themes";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
@@ -115,7 +116,8 @@ createRoot(document.getElementById("root")!).render(
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
-      <ConvexAuthProvider client={convex}>
+      <ThemeProvider>
+        <ConvexAuthProvider client={convex}>
         <AppDialogsProvider>
           <BrowserRouter>
             <RouteSyncer />
@@ -140,7 +142,8 @@ createRoot(document.getElementById("root")!).render(
           </BrowserRouter>
         </AppDialogsProvider>
         <Toaster />
-      </ConvexAuthProvider>
+        </ConvexAuthProvider>
+      </ThemeProvider>
     </RootErrorBoundary>
   </StrictMode>,
 );

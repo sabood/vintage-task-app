@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import MasterDataManager from "@/components/MasterDataManager";
+import ThemeSelector from "@/components/ThemeSelector";
 import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 import {
@@ -47,6 +48,7 @@ import {
   Loader2,
   Mail,
   NotebookPen,
+  Palette,
   Pencil,
   Power,
   RefreshCw,
@@ -1585,6 +1587,23 @@ export default function SettingsPanel() {
             categories={allCategories ?? []}
             embedded
           />
+        </div>
+      </section>
+
+      {/* appearance — light/dark mode + color theme */}
+      <section
+        id="settings-appearance"
+        className="scroll-mt-6 overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
+        <header className="flex flex-wrap items-center gap-2 border-b px-5 py-3.5">
+          <Palette className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Appearance</h2>
+          <span className="ml-auto text-xs text-muted-foreground">
+            Pick a mode and color theme — changes apply instantly
+          </span>
+        </header>
+        <div className="px-5 py-4">
+          <ThemeSelector />
         </div>
       </section>
 

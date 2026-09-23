@@ -13,6 +13,24 @@
     rel="stylesheet"
   />
   <title>Slate — a modern todo app for students</title>
+  <script>
+    // Apply the saved color theme + light/dark mode before first paint.
+    (function () {
+      try {
+        var mode = localStorage.getItem("theme");
+        if (
+          mode === "dark" ||
+          (!mode && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        ) {
+          document.documentElement.classList.add("dark");
+        }
+        var t = localStorage.getItem("slate.theme");
+        if (t && t !== "default") {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 
 
