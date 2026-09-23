@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import MasterDataManager from "@/components/MasterDataManager";
 import { useAppDialogs } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
 import {
@@ -45,6 +46,7 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   SlidersHorizontal,
+  Tag,
   Tags,
   Trash2,
   UserPlus,
@@ -321,6 +323,10 @@ function PermissionMatrix({
 export default function SettingsPanel() {
   const { confirm } = useAppDialogs();
   const myAccess = useQuery(api.settings.getMyAccess);
+  // shared master data (units & categories) used by products and materials
+  const units = useQuery(api.costing.listUnits);
+  const allCategories = useQuery(api.costing.listCategories);
+
   const members = useQuery(api.settings.listMembers);
   const customRoles = useQuery(api.settings.listCustomRoles);
   const pendingInvites = useQuery(api.settings.listPendingInvites);
@@ -884,6 +890,24 @@ export default function SettingsPanel() {
           </ul>
         </section>
       )}
+
+      {/* shared master data — the single home for units & categories */}
+      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <header className="flex flex-wrap items-center gap-2 border-b px-5 py-3.5">
+          <Tag className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Units &amp; categories</h2>
+          <span className="ml-auto text-xs text-muted-foreground">
+            Shared by finished-goods products and raw materials
+          </span>
+        </header>
+        <div className="px-5 py-4">
+          <MasterDataManager
+            units={units ?? []}
+            categories={allCategories ?? []}
+            embedded
+          />
+        </div>
+      </section>
 
       <p className="text-xs text-muted-foreground">
         <strong>Super user</strong> — full control (created automatically, one per

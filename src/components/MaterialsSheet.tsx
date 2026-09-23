@@ -2,7 +2,6 @@ import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import MasterDataManager from "@/components/MasterDataManager";
 import MaterialImportDialog from "@/components/MaterialImportDialog";
 import {
   ChevronDown,
@@ -13,7 +12,6 @@ import {
   Pencil,
   Plus,
   Search as SearchIcon,
-  Settings2,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -71,7 +69,6 @@ export default function MaterialsSheet({
     if (!parent) return [];
     return allCategories.filter((c) => c.parentId === parent._id);
   };
-  const [showManager, setShowManager] = useState(false);
   const { promptMulti, confirm } = useAppDialogs();
 
   /** Open the styled edit dialog for one material row. */
@@ -241,37 +238,17 @@ export default function MaterialsSheet({
 
   return (
     <div>
-      {/* master-data manager — must stay OUTSIDE the form (nested forms are
-          invalid HTML: the browser strips inner forms, so the manager's Add
-          buttons would submit the outer add-material form instead) */}
-      {showManager && (
-        <div className="mb-3">
-          <MasterDataManager
-            units={units}
-            categories={allCategories}
-            onClose={() => setShowManager(false)}
-          />
-        </div>
-      )}
-      {/* add material bar */}
+      {/* add material bar — units & categories are managed in Settings */}
       {canCreate && (
       <form
         onSubmit={handleAdd}
         className="rounded-xl border bg-card p-3 shadow-sm"
       >
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2">
           <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             <Package className="size-3.5" />
             Add raw material
           </p>
-          <button
-            type="button"
-            onClick={() => setShowManager((v) => !v)}
-            className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Settings2 className="size-3.5" />
-            Manage units & categories
-          </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Input

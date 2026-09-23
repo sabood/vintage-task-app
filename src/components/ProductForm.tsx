@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import MasterDataManager from "@/components/MasterDataManager";
 import {
   Download,
   Folder,
@@ -19,7 +18,6 @@ import {
   Package,
   Plus,
   Search as SearchIcon,
-  Settings2,
   Sigma,
   Trash2,
 } from "lucide-react";
@@ -36,6 +34,9 @@ const inputCls =
 
 const selectCls =
   "h-9 w-full rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50";
+
+/** Sentinel option value meaning “create a project while adding this product”. */
+const NEW_PROJECT = "__new_project__";
 
 /** Label + control + optional hint, used by the new-product popup. */
 function Field({
@@ -91,10 +92,12 @@ export default function ProductForm({
   const { confirm } = useAppDialogs();
   const addFg = useMutation(api.costing.addFinishedGood);
   const updateFg = useMutation(api.costing.updateFinishedGood);
+  const addProjectM = useMutation(api.costing.addProject);
 
   // managed master data for dropdowns
   const masterUnits = useQuery(api.costing.listUnits);
   const masterCategories = useQuery(api.costing.listCategories);
+  const projectDocs = useQuery(api.costing.listProjects);
   const units = masterUnits ?? [];
   const parentCategories = (masterCategories ?? []).filter((c) => c.parentId === undefined);
   const allCategories = masterCategories ?? [];
@@ -103,9 +106,8 @@ export default function ProductForm({
     if (!parent) return [];
     return allCategories.filter((c) => c.parentId === parent._id);
   };
-  const [showManager, setShowManager] = useState(false);
-
   const [project, setProject] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [unit, setUnit] = useState("");
@@ -119,9 +121,11 @@ export default function ProductForm({
   const [projectFilter, setProjectFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
 
-  // when arriving from the Projects tab, pre-filter to that project
+  // when arriving from the Projects tab, pre-filter and pre-select that project
   useEffect(() => {
-    if (initialProject) setProjectFilter(initialProject);
+    if (!initialProject) return;
+    setProjectFilter(initialProject);
+    setProject(initialProject);
   }, [initialProject]);
 
   // product costs across all FGs (single query, grouped client-side)
@@ -135,10 +139,13 @@ export default function ProductForm({
     return map;
   }, [allItems]);
 
-  const projects = useMemo(
-    () => Array.from(new Set(finishedGoods.map((f) => f.projectName))).sort(),
-    [finishedGoods],
-  );
+  // every project that exists as a record, plus names still only on products
+  const projects = useMemo(() => {
+    const names = new Set<string>();
+    for (const p of projectDocs ?? []) names.add(p.name);
+    for (const f of finishedGoods) names.add(f.projectName);
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [projectDocs, finishedGoods]);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -161,10 +168,11 @@ export default function ProductForm({
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanProject = project.trim();
+    const isNewProject = project === NEW_PROJECT;
+    const cleanProject = (isNewProject ? newProjectName : project).trim();
     const cleanName = name.trim();
     if (!cleanProject) {
-      toast.error("Give the project a name.");
+      toast.error(isNewProject ? "Name the new project." : "Pick a project.");
       return;
     }
     if (!cleanName) {
@@ -178,6 +186,14 @@ export default function ProductForm({
     }
     setSaving(true);
     try {
+      if (isNewProject) {
+        // keep the Projects tab in sync — best effort, the product matters more
+        try {
+          await addProjectM({ name: cleanProject });
+        } catch {
+          /* ignore: the product can still be created under this project name */
+        }
+      }
       const id = await addFg({
         projectName: cleanProject,
         name: cleanName,
@@ -197,6 +213,8 @@ export default function ProductForm({
       setSubCategory("");
       setNote("");
       setMarkup("0");
+      setProject(cleanProject);
+      setNewProjectName("");
       setShowForm(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn't create the product.");
@@ -263,50 +281,43 @@ export default function ProductForm({
       {/* new-product popup — the master-data manager lives INSIDE it, never
           nested in a <form> (nested forms are invalid HTML and would make its
           Add buttons submit the product form instead) */}
-      <Dialog
-        open={showForm}
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowManager(false);
-            setShowForm(false);
-          }
-        }}
-      >
+      <Dialog open={showForm} onOpenChange={(open) => !open && setShowForm(false)}>
         <DialogContent className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="border-b border-border/60 px-5 py-4">
             <DialogTitle className="flex items-center gap-2.5 text-base">
               <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
                 <Package className="size-4" />
               </span>
-              {showManager ? "Units & categories" : "New product (FG)"}
+              New product (FG)
             </DialogTitle>
             <DialogDescription className="text-xs">
-              {showManager
-                ? "Manage the units and categories shared by every product and raw material."
-                : "The FG code is assigned automatically. Cost and sales price come from the costing sheet, not from typing."}
+              The FG code is assigned automatically. Cost and sales price come
+              from the costing sheet, not from typing.
             </DialogDescription>
           </DialogHeader>
 
           <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
-            {showManager ? (
-              <MasterDataManager
-                units={units}
-                categories={allCategories}
-                onClose={() => setShowManager(false)}
-              />
-            ) : (
-              <form id="new-product-form" onSubmit={handleCreate} className="space-y-5">
+            <form id="new-product-form" onSubmit={handleCreate} className="space-y-5">
                 <Group title="Product">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Project" required>
-                      <Input
+                      <select
                         value={project}
-                        onChange={(e) => setProject(e.target.value)}
-                        list="known-projects"
-                        placeholder="e.g. Office renovation"
+                        onChange={(e) => {
+                          setProject(e.target.value);
+                          if (e.target.value !== NEW_PROJECT) setNewProjectName("");
+                        }}
                         aria-label="Project"
-                        className={inputCls}
-                      />
+                        className={selectCls}
+                      >
+                        <option value="">Select a project…</option>
+                        {projects.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                        <option value={NEW_PROJECT}>＋ New project…</option>
+                      </select>
                     </Field>
                     <Field label="Product name" required>
                       <Input
@@ -342,11 +353,24 @@ export default function ProductForm({
                       </select>
                     </Field>
                   </div>
-                  <datalist id="known-projects">
-                    {projects.map((p) => (
-                      <option key={p} value={p} />
-                    ))}
-                  </datalist>
+                  {project === NEW_PROJECT && (
+                    <div className="sm:col-span-2">
+                      <Field
+                        label="New project name"
+                        required
+                        hint="A project record is created with its own PR code, and this product goes inside it."
+                      >
+                        <Input
+                          autoFocus
+                          value={newProjectName}
+                          onChange={(e) => setNewProjectName(e.target.value)}
+                          placeholder="e.g. Office renovation"
+                          aria-label="New project name"
+                          className={inputCls}
+                        />
+                      </Field>
+                    </div>
+                  )}
                 </Group>
 
                 <Group title="Classification">
@@ -457,58 +481,33 @@ export default function ProductForm({
                     className="min-h-16 resize-y rounded-lg text-sm"
                   />
                 </Group>
-              </form>
-            )}
+            </form>
           </div>
 
           <DialogFooter className="border-t border-border/60 px-5 py-3">
-            {showManager ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-lg"
-                onClick={() => setShowManager(false)}
-              >
-                Back to product details
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="rounded-lg text-muted-foreground sm:mr-auto"
-                  onClick={() => setShowManager(true)}
-                >
-                  <Settings2 className="size-3.5" />
-                  Units & categories
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-lg"
-                  onClick={() => setShowForm(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  form="new-product-form"
-                  size="sm"
-                  className="rounded-lg"
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="size-3.5" />
-                  )}
-                  Create product
-                </Button>
-              </>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setShowForm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="new-product-form"
+              size="sm"
+              className="rounded-lg"
+              disabled={saving}
+            >
+              {saving ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Plus className="size-3.5" />
+              )}
+              Create product
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

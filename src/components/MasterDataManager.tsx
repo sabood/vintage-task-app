@@ -27,10 +27,14 @@ export default function MasterDataManager({
   units,
   categories,
   onClose,
+  embedded = false,
 }: {
   units: UnitDoc[];
   categories: CategoryDoc[];
-  onClose: () => void;
+  /** Present only when shown as a dismissible panel (the Settings tab owns it). */
+  onClose?: () => void;
+  /** Drop the outer card chrome when placed inside an existing section. */
+  embedded?: boolean;
 }) {
   const addUnit = useMutation(api.costing.addUnit);
   const renameUnitM = useMutation(api.costing.renameUnit);
@@ -158,7 +162,9 @@ export default function MasterDataManager({
     "w-full rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary/30";
 
   return (
-    <div className="rounded-xl border bg-card p-3 shadow-sm">
+    <div
+      className={cn(!embedded && "rounded-xl border bg-card p-3 shadow-sm")}
+    >
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-1 rounded-lg border bg-background p-0.5">
           <button
@@ -188,14 +194,16 @@ export default function MasterDataManager({
             Categories
           </button>
         </div>
-        <button
-          type="button"
-          aria-label="Close manager"
-          className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onClose}
-        >
-          <X className="size-3.5" />
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            aria-label="Close manager"
+            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={onClose}
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
       </div>
 
       {tab === "units" ? (
