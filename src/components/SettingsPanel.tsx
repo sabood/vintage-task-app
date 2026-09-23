@@ -1445,10 +1445,19 @@ export default function SettingsPanel() {
             </div>
           );
         })()}
-        <footer className="border-t border-border/60 px-5 py-2.5 text-xs text-muted-foreground">
-          Hover a person to move them (<GitBranch className="mb-0.5 inline size-3" />), add a
-          junior under them (<UserPlus className="mb-0.5 inline size-3" />) or reset their
-          password.
+        <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 px-5 py-2.5 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <GitBranch className="size-3" />
+            Move who they report to
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <UserPlus className="size-3" />
+            Add a junior under them
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <RefreshCw className="size-3" />
+            Reset their password
+          </span>
         </footer>
       </section>
 
