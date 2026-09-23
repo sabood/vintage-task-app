@@ -2,6 +2,15 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import MasterDataManager from "@/components/MasterDataManager";
 import {
   Download,
@@ -14,7 +23,7 @@ import {
   Sigma,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
@@ -24,6 +33,47 @@ type FgDoc = Doc<"finishedGoods">;
 
 const inputCls =
   "h-9 w-full rounded-lg border bg-card px-2.5 text-sm outline-none placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-primary/30";
+
+const selectCls =
+  "h-9 w-full rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50";
+
+/** Label + control + optional hint, used by the new-product popup. */
+function Field({
+  label,
+  hint,
+  required,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="flex items-center gap-1 text-xs font-medium text-foreground">
+        {label}
+        {required && <span className="text-destructive">*</span>}
+      </span>
+      {children}
+      {hint && (
+        <span className="block text-[10px] text-muted-foreground/70">{hint}</span>
+      )}
+    </label>
+  );
+}
+
+/** Section heading inside the popup. */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2.5">
+      <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
 
 /** Products page: add-product form + Excel-style listing of FG products with costs. */
 export default function ProductForm({
@@ -200,179 +250,268 @@ export default function ProductForm({
 
   return (
     <div>
-      {/* master-data manager — must stay OUTSIDE the form (nested forms are
-          invalid HTML: the browser strips inner forms, so the manager's Add
-          buttons would submit the outer create-product form instead) */}
-      {showManager && (
-        <div className="mb-3">
-          <MasterDataManager
-            units={units}
-            categories={allCategories}
-            onClose={() => setShowManager(false)}
-          />
-        </div>
-      )}
-      {/* add product bar (collapsible, like the materials add bar) */}
-      {showForm ? (
-        <form onSubmit={handleCreate} className="rounded-xl border bg-card p-3 shadow-sm">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              <Package className="size-3.5" />
-              New product (FG)
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setShowManager((v) => !v)}
-                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Settings2 className="size-3.5" />
-                Manage units & categories
-              </button>
-              <button
-                type="button"
-                className="text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setShowForm(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <Input
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
-              list="known-projects"
-              placeholder="Project *"
-              aria-label="Project"
-              className="h-9 rounded-lg text-sm"
-            />
-            <datalist id="known-projects">
-              {projects.map((p) => (
-                <option key={p} value={p} />
-              ))}
-            </datalist>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Product name * e.g. Wooden chair"
-              aria-label="Product name"
-              className="h-9 rounded-lg text-sm"
-            />
-            <Input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="Auto code (FG0001)"
-              aria-label="Product code"
-              className="h-9 rounded-lg text-sm"
-            />
-            <select
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              aria-label="Sold per unit"
-              className="h-9 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">Sold per (unit)…</option>
-              {units.map((u) => (
-                <option key={u._id} value={u.name}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                setSubCategory("");
-              }}
-              aria-label="Category"
-              className="h-9 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">Category…</option>
-              {parentCategories.map((c) => (
-                <option key={c._id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={subCategory}
-              onChange={(e) => setSubCategory(e.target.value)}
-              aria-label="Sub-category"
-              disabled={!category || subsOf(category).length === 0}
-              className="h-9 rounded-lg border bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-            >
-              <option value="">Sub-category…</option>
-              {subsOf(category).map((c) => (
-                <option key={c._id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <Input
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              placeholder="Currency"
-              maxLength={4}
-              aria-label="Currency"
-              className="h-9 rounded-lg text-sm"
-            />
-            <Input
-              type="number"
-              min="0"
-              step="any"
-              value={markup}
-              onChange={(e) => setMarkup(e.target.value)}
-              placeholder="Margin %"
-              aria-label="Margin percent"
-              title="Sales price = Cost + Margin % — cost comes from the costing sheet"
-              className="h-9 rounded-lg text-sm"
-            />
-            <div>
-              <Input
-                disabled
-                value=""
-                placeholder="Cost (auto)"
-                aria-label="Cost — calculated automatically from the costing sheet"
-                title="Cost is calculated automatically from the product's costing sheet"
-                className="h-9 rounded-lg text-sm"
+      {/* new-product trigger */}
+      <button
+        type="button"
+        onClick={() => setShowForm(true)}
+        className="flex w-full items-center gap-1.5 rounded-xl border border-dashed bg-card/60 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Plus className="size-3.5" />
+        New product (FG) — project, name, code, unit, margin…
+      </button>
+
+      {/* new-product popup — the master-data manager lives INSIDE it, never
+          nested in a <form> (nested forms are invalid HTML and would make its
+          Add buttons submit the product form instead) */}
+      <Dialog
+        open={showForm}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowManager(false);
+            setShowForm(false);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="border-b border-border/60 px-5 py-4">
+            <DialogTitle className="flex items-center gap-2.5 text-base">
+              <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <Package className="size-4" />
+              </span>
+              {showManager ? "Units & categories" : "New product (FG)"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {showManager
+                ? "Manage the units and categories shared by every product and raw material."
+                : "The FG code is assigned automatically. Cost and sales price come from the costing sheet, not from typing."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+            {showManager ? (
+              <MasterDataManager
+                units={units}
+                categories={allCategories}
+                onClose={() => setShowManager(false)}
               />
-              <p className="mt-0.5 text-[10px] text-muted-foreground/70">from costing sheet</p>
-            </div>
-            <div>
-              <Input
-                disabled
-                value=""
-                placeholder="Sales price (auto)"
-                aria-label="Sales price — cost plus margin, calculated automatically"
-                title="Sales price = Cost × (1 + Margin %), calculated automatically"
-                className="h-9 rounded-lg text-sm"
-              />
-              <p className="mt-0.5 text-[10px] text-muted-foreground/70">cost + margin %</p>
-            </div>
-            <Input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Note (finish, dimensions…)"
-              aria-label="Product note"
-              className="h-9 rounded-lg text-sm sm:col-span-2 lg:col-span-2"
-            />
+            ) : (
+              <form id="new-product-form" onSubmit={handleCreate} className="space-y-5">
+                <Group title="Product">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Project" required>
+                      <Input
+                        value={project}
+                        onChange={(e) => setProject(e.target.value)}
+                        list="known-projects"
+                        placeholder="e.g. Office renovation"
+                        aria-label="Project"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Product name" required>
+                      <Input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g. Wooden chair"
+                        aria-label="Product name"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Product code" hint="Leave blank to auto-assign FG0001, FG0002…">
+                      <Input
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        placeholder="Auto (FG0001)"
+                        aria-label="Product code"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Sold per (unit)" hint="Used on quotes and costing sheets">
+                      <select
+                        value={unit}
+                        onChange={(e) => setUnit(e.target.value)}
+                        aria-label="Sold per unit"
+                        className={selectCls}
+                      >
+                        <option value="">Not set</option>
+                        {units.map((u) => (
+                          <option key={u._id} value={u.name}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <datalist id="known-projects">
+                    {projects.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </Group>
+
+                <Group title="Classification">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Category">
+                      <select
+                        value={category}
+                        onChange={(e) => {
+                          setCategory(e.target.value);
+                          setSubCategory("");
+                        }}
+                        aria-label="Category"
+                        className={selectCls}
+                      >
+                        <option value="">Not set</option>
+                        {parentCategories.map((c) => (
+                          <option key={c._id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field
+                      label="Sub-category"
+                      hint={
+                        !category
+                          ? "Pick a category first"
+                          : subsOf(category).length === 0
+                            ? "No sub-categories for this category yet"
+                            : undefined
+                      }
+                    >
+                      <select
+                        value={subCategory}
+                        onChange={(e) => setSubCategory(e.target.value)}
+                        aria-label="Sub-category"
+                        disabled={!category || subsOf(category).length === 0}
+                        className={selectCls}
+                      >
+                        <option value="">Not set</option>
+                        {subsOf(category).map((c) => (
+                          <option key={c._id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                </Group>
+
+                <Group title="Pricing">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Currency">
+                      <Input
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                        placeholder="$"
+                        maxLength={4}
+                        aria-label="Currency"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field
+                      label="Margin %"
+                      hint="Sales price = Cost × (1 + Margin %)"
+                    >
+                      <Input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={markup}
+                        onChange={(e) => setMarkup(e.target.value)}
+                        placeholder="0"
+                        aria-label="Margin percent"
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 rounded-xl border border-dashed bg-muted/30 p-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                        Cost — calculated
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Total of the product's costing lines. Edit them on the
+                        product's costing sheet.
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                        Sales price — calculated
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Cost plus the margin above. Both stay in sync with the
+                        costing sheet.
+                      </p>
+                    </div>
+                  </div>
+                </Group>
+
+                <Group title="Notes">
+                  <Textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    placeholder="Finish, dimensions, anything the costing sheet should mention…"
+                    aria-label="Product note"
+                    className="min-h-16 resize-y rounded-lg text-sm"
+                  />
+                </Group>
+              </form>
+            )}
           </div>
-          <Button type="submit" size="sm" className="mt-2 h-9 rounded-lg" disabled={saving}>
-            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-            Create product
-          </Button>
-        </form>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowForm(true)}
-          className="flex w-full items-center gap-1.5 rounded-xl border border-dashed bg-card/60 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <Plus className="size-3.5" />
-          New product (FG) — project, name, code, unit, margin…
-        </button>
-      )}
+
+          <DialogFooter className="border-t border-border/60 px-5 py-3">
+            {showManager ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-lg"
+                onClick={() => setShowManager(false)}
+              >
+                Back to product details
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-lg text-muted-foreground sm:mr-auto"
+                  onClick={() => setShowManager(true)}
+                >
+                  <Settings2 className="size-3.5" />
+                  Units & categories
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg"
+                  onClick={() => setShowForm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  form="new-product-form"
+                  size="sm"
+                  className="rounded-lg"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="size-3.5" />
+                  )}
+                  Create product
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* listing sheet — matches the raw-materials sheet */}
       <section className="mt-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
