@@ -40,9 +40,17 @@ const cellCls =
 export default function MaterialsSheet({
   materials,
   loading,
+  canCreate = true,
+  canEdit = true,
+  canDelete = true,
+  canImportExport = true,
 }: {
   materials: MaterialDoc[];
   loading: boolean;
+  canCreate?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canImportExport?: boolean;
 }) {
   const addMaterial = useMutation(api.costing.addMaterial);
   const updateMaterial = useMutation(api.costing.updateMaterial);
@@ -237,6 +245,7 @@ export default function MaterialsSheet({
         </div>
       )}
       {/* add material bar */}
+      {canCreate && (
       <form
         onSubmit={handleAdd}
         className="rounded-xl border bg-card p-3 shadow-sm"
@@ -329,6 +338,7 @@ export default function MaterialsSheet({
           </Button>
         </div>
       </form>
+      )}
 
       {/* listing sheet */}
       <section className="mt-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -363,6 +373,7 @@ export default function MaterialsSheet({
                 </option>
               ))}
             </select>
+            {canImportExport && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" size="sm" className="h-7 rounded-lg text-xs">
@@ -431,6 +442,7 @@ export default function MaterialsSheet({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>
         </div>
 
@@ -476,24 +488,28 @@ export default function MaterialsSheet({
                     <td className="px-3 py-2 text-right tabular-nums">{m.pricePerUnit.toLocaleString()}</td>
                     <td className="px-2 py-1 text-center">
                       <span className="hidden gap-0.5 group-hover/row:inline-flex">
-                        <button
-                          type="button"
-                          aria-label={`Edit ${m.name}`}
-                          title="Edit material"
-                          className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
-                          onClick={() => void handleEdit(m)}
-                        >
-                          <Pencil className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${m.name}`}
-                          title="Delete material"
-                          className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive"
-                          onClick={() => void handleDelete(m)}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            aria-label={`Edit ${m.name}`}
+                            title="Edit material"
+                            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
+                            onClick={() => void handleEdit(m)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            aria-label={`Delete ${m.name}`}
+                            title="Delete material"
+                            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-destructive"
+                            onClick={() => void handleDelete(m)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
                       </span>
                     </td>
                   </tr>

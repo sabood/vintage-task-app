@@ -26,6 +26,8 @@ import {
   ACTION_DESCRIPTIONS,
   ACTIONS,
   type ActionKey,
+  itemsForSection,
+  ITEMS,
   SECTIONS,
   SECTION_LABELS,
   type SectionKey,
@@ -60,6 +62,7 @@ type GranularPerms = {
   tasks?: Partial<Record<ActionKey, boolean>>;
   notes?: Partial<Record<ActionKey, boolean>>;
   costing?: Partial<Record<ActionKey, boolean>>;
+  items?: Record<string, Partial<Record<ActionKey, boolean>>>;
 };
 
 type Member = {
@@ -120,41 +123,72 @@ const SECTION_ICONS: Record<SectionKey, typeof CheckSquare> = {
 
 const ASSIGNABLE: AssignableRole[] = ["admin", "user", "member"];
 
-const allAllowed = (): Record<SectionKey, Record<ActionKey, boolean>> => ({
-  tasks: { view: true, create: true, edit: true, delete: true },
-  notes: { view: true, create: true, edit: true, delete: true },
-  costing: { view: true, create: true, edit: true, delete: true },
+type PermDraft = {
+  sections: Record<SectionKey, Record<ActionKey, boolean>>;
+  items: Record<string, Partial<Record<ActionKey, boolean>>>;
+};
+
+const allAllowed = (): PermDraft => ({
+  sections: {
+    tasks: { view: true, create: true, edit: true, delete: true },
+    notes: { view: true, create: true, edit: true, delete: true },
+    costing: { view: true, create: true, edit: true, delete: true },
+  },
+  items: Object.fromEntries(
+    ITEMS.map((item) => [
+      item.key,
+      Object.fromEntries(item.actions.map((a) => [a, true])),
+    ]),
+  ),
 });
 
-const fromPerms = (perms: GranularPerms | undefined) => ({
-  tasks: {
-    view: perms?.tasks?.view ?? true,
-    create: perms?.tasks?.create ?? true,
-    edit: perms?.tasks?.edit ?? true,
-    delete: perms?.tasks?.delete ?? true,
+const fromPerms = (perms: GranularPerms | undefined): PermDraft => ({
+  sections: {
+    tasks: {
+      view: perms?.tasks?.view ?? true,
+      create: perms?.tasks?.create ?? true,
+      edit: perms?.tasks?.edit ?? true,
+      delete: perms?.tasks?.delete ?? true,
+    },
+    notes: {
+      view: perms?.notes?.view ?? true,
+      create: perms?.notes?.create ?? true,
+      edit: perms?.notes?.edit ?? true,
+      delete: perms?.notes?.delete ?? true,
+    },
+    costing: {
+      view: perms?.costing?.view ?? true,
+      create: perms?.costing?.create ?? true,
+      edit: perms?.costing?.edit ?? true,
+      delete: perms?.costing?.delete ?? true,
+    },
   },
-  notes: {
-    view: perms?.notes?.view ?? true,
-    create: perms?.notes?.create ?? true,
-    edit: perms?.notes?.edit ?? true,
-    delete: perms?.notes?.delete ?? true,
-  },
-  costing: {
-    view: perms?.costing?.view ?? true,
-    create: perms?.costing?.create ?? true,
-    edit: perms?.costing?.edit ?? true,
-    delete: perms?.costing?.delete ?? true,
-  },
+  items: Object.fromEntries(
+    ITEMS.map((item) => [
+      item.key,
+      Object.fromEntries(
+        item.actions.map((a) => [a, perms?.items?.[item.key]?.[a] ?? true]),
+      ),
+    ]),
+  ),
 });
 
-/** Compact summary of a permission set, e.g. "Tasks: full · Notes: view+create". */
+/** Compact summary of a permission set, e.g. "Tasks: full · Notes: view+edit". */
 function permsSummary(perms: GranularPerms | undefined): string {
   const parts = SECTIONS.map((s) => {
     const denied = ACTIONS.filter((a) => perms?.[s]?.[a] === false);
-    if (denied.length === 0) return `${SECTION_LABELS[s]}: full`;
-    if (denied.length === ACTIONS.length) return `${SECTION_LABELS[s]}: none`;
-    const allowed = ACTIONS.filter((a) => !denied.includes(a));
-    return `${SECTION_LABELS[s]}: ${allowed.join("+")}`;
+    const items = itemsForSection(s).filter((item) =>
+      item.actions.some((a) => perms?.items?.[item.key]?.[a] === false),
+    );
+    let base: string;
+    if (denied.length === 0) base = "full";
+    else if (denied.length === ACTIONS.length) base = "none";
+    else base = ACTIONS.filter((a) => !denied.includes(a)).join("+");
+    const suffix =
+      items.length > 0
+        ? ` (${items.length} item${items.length === 1 ? "" : "s"} restricted)`
+        : "";
+    return `${SECTION_LABELS[s]}: ${base}${suffix}`;
   });
   return parts.join(" · ");
 }
@@ -199,34 +233,84 @@ function SectionMatrix({
   );
 }
 
-/** Full permission matrix across all sections. */
+/** Full permission matrix: every section, plus its items, action by action. */
 function PermissionMatrix({
   value,
-  onChange,
+  onSectionChange,
+  onItemChange,
   disabled,
 }: {
-  value: Record<SectionKey, Record<ActionKey, boolean>>;
-  onChange: (section: SectionKey, action: ActionKey, allowed: boolean) => void;
+  value: PermDraft;
+  onSectionChange: (section: SectionKey, action: ActionKey, allowed: boolean) => void;
+  onItemChange: (item: string, action: ActionKey, allowed: boolean) => void;
   disabled?: boolean;
 }) {
   return (
     <div className="space-y-2.5">
       {SECTIONS.map((s) => {
         const Icon = SECTION_ICONS[s];
+        const sectionItems = itemsForSection(s);
         return (
           <div key={s} className="rounded-xl border px-3 py-2.5">
             <div className="mb-2 flex items-center gap-2">
               <Icon className="size-4 text-muted-foreground" />
               <span className="text-sm font-medium">{SECTION_LABELS[s]}</span>
               <span className="ml-auto text-[10px] text-muted-foreground">
-                Tap a box to allow / restrict
+                Whole section
               </span>
             </div>
             <SectionMatrix
-              perms={value[s]}
+              perms={value.sections[s]}
               disabled={disabled}
-              onChange={(a, allowed) => onChange(s, a, allowed)}
+              onChange={(a, allowed) => onSectionChange(s, a, allowed)}
             />
+
+            {sectionItems.length > 0 && (
+              <div className="mt-2.5 space-y-1 border-t pt-2.5">
+                <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  Detailed · inside {SECTION_LABELS[s].toLowerCase()}
+                </p>
+                {sectionItems.map((item) => (
+                  <div key={item.key} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">
+                      {item.label}
+                    </span>
+                    <span className="flex shrink-0 gap-1">
+                      {item.actions.map((action) => {
+                        const allowed =
+                          value.items[item.key]?.[action as ActionKey] ?? true;
+                        return (
+                          <button
+                            key={action}
+                            type="button"
+                            disabled={disabled}
+                            title={`${item.label} — ${ACTION_DESCRIPTIONS[action as ActionKey]}`}
+                            aria-pressed={allowed}
+                            onClick={() =>
+                              onItemChange(item.key, action as ActionKey, !allowed)
+                            }
+                            className={cn(
+                              "flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium transition-colors",
+                              allowed
+                                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+                                : "border-destructive/30 bg-destructive/5 text-destructive",
+                              !disabled && "hover:brightness-95",
+                            )}
+                          >
+                            {allowed ? (
+                              <Eye className="size-3" />
+                            ) : (
+                              <EyeOff className="size-3" />
+                            )}
+                            {action.charAt(0).toUpperCase() + action.slice(1)}
+                          </button>
+                        );
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -247,6 +331,9 @@ export default function SettingsPanel() {
   const setMemberCustomRole = useMutation(api.settings.setMemberCustomRole);
   const setMemberSectionPermissions = useMutation(
     api.settings.setMemberSectionPermissions,
+  );
+  const setMemberItemPermissions = useMutation(
+    api.settings.setMemberItemPermissions,
   );
   const removeMember = useMutation(api.settings.removeMember);
   const setWorkspaceName = useMutation(api.settings.setWorkspaceName);
@@ -353,20 +440,21 @@ export default function SettingsPanel() {
 
   const submitRole = async () => {
     setBusy(true);
+    const permissions = { ...rolePerms.sections, items: rolePerms.items };
     try {
       if (editingRoleId !== null) {
         await updateCustomRole({
           id: editingRoleId,
           name: roleName,
           description: roleDescription,
-          permissions: rolePerms,
+          permissions,
         });
         toast.success(`Role “${roleName}” updated.`);
       } else {
         await createCustomRole({
           name: roleName,
           description: roleDescription,
-          permissions: rolePerms,
+          permissions,
         });
         toast.success(`Role “${roleName}” created.`);
       }
@@ -436,7 +524,16 @@ export default function SettingsPanel() {
         await setMemberSectionPermissions({
           userId: permMember.userId,
           section: s,
-          permissions: { [s]: permDraft[s] } as GranularPerms,
+          permissions: { [s]: permDraft.sections[s] } as GranularPerms,
+        });
+      }
+      for (const item of ITEMS) {
+        await setMemberItemPermissions({
+          userId: permMember.userId,
+          item: item.key,
+          permissions: {
+            items: { [item.key]: permDraft.items[item.key] ?? {} },
+          } as GranularPerms,
         });
       }
       toast.success(
@@ -958,8 +1055,20 @@ export default function SettingsPanel() {
               <Label>Detailed permissions</Label>
               <PermissionMatrix
                 value={rolePerms}
-                onChange={(s, a, allowed) =>
-                  setRolePerms((p) => ({ ...p, [s]: { ...p[s], [a]: allowed } }))
+                onSectionChange={(s, a, allowed) =>
+                  setRolePerms((p) => ({
+                    ...p,
+                    sections: { ...p.sections, [s]: { ...p.sections[s], [a]: allowed } },
+                  }))
+                }
+                onItemChange={(item, a, allowed) =>
+                  setRolePerms((p) => ({
+                    ...p,
+                    items: {
+                      ...p.items,
+                      [item]: { ...(p.items[item] ?? {}), [a]: allowed },
+                    },
+                  }))
                 }
               />
             </div>
@@ -997,8 +1106,20 @@ export default function SettingsPanel() {
 
           <PermissionMatrix
             value={permDraft}
-            onChange={(s, a, allowed) =>
-              setPermDraft((p) => ({ ...p, [s]: { ...p[s], [a]: allowed } }))
+            onSectionChange={(s, a, allowed) =>
+              setPermDraft((p) => ({
+                ...p,
+                sections: { ...p.sections, [s]: { ...p.sections[s], [a]: allowed } },
+              }))
+            }
+            onItemChange={(item, a, allowed) =>
+              setPermDraft((p) => ({
+                ...p,
+                items: {
+                  ...p.items,
+                  [item]: { ...(p.items[item] ?? {}), [a]: allowed },
+                },
+              }))
             }
           />
 

@@ -522,6 +522,7 @@ export default function NotesPanel({
   tasks,
   canCreate = true,
   canEdit = true,
+  canFlag = true,
 }: {
   activePage: Doc<"notePages"> | null;
   pagesLoading: boolean;
@@ -530,6 +531,7 @@ export default function NotesPanel({
   tasks: Doc<"tasks">[];
   canCreate?: boolean;
   canEdit?: boolean;
+  canFlag?: boolean;
 }) {
   if (pagesLoading && !activePage) {
     return (
@@ -565,7 +567,7 @@ export default function NotesPanel({
       onFlagTask={onFlagTask}
       tasks={tasks}
       canEdit={canEdit}
-      canFlag={canCreate}
+      canFlag={canFlag}
     />
   );
 }

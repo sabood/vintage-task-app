@@ -3,8 +3,13 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { permissionsValidator } from "./schema";
-import type { ActionKey, GranularPerms, SectionKey } from "../lib/permissions";
-import { ACTIONS, SECTIONS } from "../lib/permissions";
+import type {
+  ActionKey,
+  GranularPerms,
+  ItemKey,
+  SectionKey,
+} from "../lib/permissions";
+import { ACTIONS, ITEMS, SECTIONS } from "../lib/permissions";
 
 /**
  * Workspace roles:
@@ -107,6 +112,21 @@ function mergePerms(
       out[s] = merged as GranularPerms[SectionKey];
     }
   }
+  // Item-level permissions merge the same way.
+  const items: NonNullable<GranularPerms["items"]> = {};
+  for (const item of ITEMS) {
+    const merged: Record<string, boolean> = {};
+    for (const a of item.actions) {
+      const v =
+        override?.items?.[item.key]?.[a as ActionKey] ??
+        base?.items?.[item.key]?.[a as ActionKey];
+      if (v !== undefined) merged[a] = v;
+    }
+    if (Object.keys(merged).length > 0) {
+      items[item.key as ItemKey] = merged;
+    }
+  }
+  if (Object.keys(items).length > 0) out.items = items;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -596,6 +616,49 @@ export const setMemberPermission = mutation({
   },
 });
 
+/** Set one item's permissions on a member (finer than a whole section). */
+export const setMemberItemPermissions = mutation({
+  args: {
+    userId: v.id("users"),
+    item: v.string(),
+    permissions: permissionsValidator,
+  },
+  handler: async (ctx, { userId: targetId, item, permissions }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in first.");
+    const settingsDoc = await getOrCreateSettings(ctx, userId);
+    const actor = await actorRole(ctx, settingsDoc, userId);
+    if (!actor || (actor !== "super" && actor !== "admin")) {
+      throw new Error("Only the super user or an admin can change restrictions.");
+    }
+    if (targetId === settingsDoc.ownerId) {
+      throw new Error("The super user always has full access.");
+    }
+    const known = ITEMS.some((i) => i.key === item);
+    if (!known) throw new Error("Unknown permission item.");
+    const target = settingsDoc.members.find((m) => m.userId === targetId);
+    if (!target) throw new Error("That user is not a member.");
+    const incoming = permissions.items?.[item as ItemKey];
+    const nextPermissions: GranularPerms = {
+      ...(target.permissions ?? {}),
+      items: {
+        ...(target.permissions?.items ?? {}),
+        [item as ItemKey]: incoming ?? {},
+      },
+    };
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.userId === targetId ? { ...m, permissions: nextPermissions } : m,
+      ),
+    });
+    await ctx.db.patch(settingsDoc._id, {
+      members: settingsDoc.members.map((m) =>
+        m.userId === targetId ? { ...m, permissions: nextPermissions } : m,
+      ),
+    });
+  },
+});
+
 /** Set a whole section block of permissions on a member at once. */
 export const setMemberSectionPermissions = mutation({
   args: {
@@ -624,6 +687,7 @@ export const setMemberSectionPermissions = mutation({
     const nextPermissions: GranularPerms = {
       ...(target.permissions ?? {}),
       [section]: sectionPerms ?? {},
+      items: target.permissions?.items,
     };
     await ctx.db.patch(settingsDoc._id, {
       members: settingsDoc.members.map((m) =>

@@ -12,7 +12,48 @@ export type GranularPerms = {
   tasks?: Partial<Record<ActionKey, boolean>>;
   notes?: Partial<Record<ActionKey, boolean>>;
   costing?: Partial<Record<ActionKey, boolean>>;
+  /** Item-level permissions: finer control inside each section. */
+  items?: Partial<Record<ItemKey, Partial<Record<ActionKey, boolean>>>>;
 };
+
+// ── Item-level permissions ───────────────────────────────────────────────
+// Each section is made of items (lists, notebooks, materials, products…).
+// Every item lists the actions that make sense for it, so the UI only shows
+// relevant toggles and enforcement stays predictable.
+
+export const ITEMS = [
+  { key: "taskLists", section: "tasks", label: "Task lists", actions: ["create", "edit", "delete"] },
+  { key: "taskFolders", section: "tasks", label: "List folders", actions: ["create", "delete"] },
+  { key: "taskSteps", section: "tasks", label: "Subtasks & attachments", actions: ["create", "edit", "delete"] },
+  { key: "notebooks", section: "notes", label: "Notebooks", actions: ["create", "edit", "delete"] },
+  { key: "notePages", section: "notes", label: "Pages & sub-pages", actions: ["create", "edit", "delete"] },
+  { key: "flagToTask", section: "notes", label: "Flag text → task", actions: ["create"] },
+  { key: "materials", section: "costing", label: "Raw materials", actions: ["create", "edit", "delete"] },
+  { key: "dataImport", section: "costing", label: "Excel import / export", actions: ["create", "view"] },
+  { key: "products", section: "costing", label: "Products (FG)", actions: ["create", "edit", "delete"] },
+  { key: "projects", section: "costing", label: "Projects", actions: ["create", "edit", "delete"] },
+  { key: "printing", section: "costing", label: "Printing costing sheets", actions: ["view"] },
+] as const;
+
+export type ItemKey = (typeof ITEMS)[number]["key"];
+
+/** Item catalog grouped by the section it belongs to. */
+export function itemsForSection(section: SectionKey) {
+  return ITEMS.filter((i) => i.section === section);
+}
+
+/** Can the user do `action` on a specific item? Falls back to the section. */
+export function canItem(
+  perms: GranularPerms | undefined,
+  item: ItemKey,
+  action: ActionKey,
+): boolean {
+  const explicit = perms?.items?.[item]?.[action];
+  if (explicit !== undefined) return explicit;
+  const section = ITEMS.find((i) => i.key === item)?.section;
+  if (section) return can(perms, section, action);
+  return true;
+}
 
 /** Resolve a permission: explicit value > default allowed. */
 export function can(

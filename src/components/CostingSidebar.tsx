@@ -34,6 +34,7 @@ export default function CostingSidebar({
   onRenameFg,
   onDeleteFg,
   onMaterialsClick,
+  showMaterials = true,
 }: {
   finishedGoods: FgDoc[];
   materials: MaterialDoc[];
@@ -44,6 +45,7 @@ export default function CostingSidebar({
   onRenameFg?: (fg: FgDoc) => void;
   onDeleteFg?: (fg: FgDoc) => void;
   onMaterialsClick: () => void;
+  showMaterials?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -60,15 +62,19 @@ export default function CostingSidebar({
 
   /** Top-level navigation: raw materials, products, projects. */
   const navItems = [
-    {
-      id: "materials" as const,
-      label: "Raw materials",
-      icon: Layers,
-      count: materials.length,
-      unit: "item",
-      active: view?.kind === "materials",
-      onClick: onMaterialsClick,
-    },
+    ...(showMaterials
+      ? [
+          {
+            id: "materials" as const,
+            label: "Raw materials",
+            icon: Layers,
+            count: materials.length,
+            unit: "item",
+            active: view?.kind === "materials",
+            onClick: onMaterialsClick,
+          },
+        ]
+      : []),
     {
       id: "products" as const,
       label: "Products",

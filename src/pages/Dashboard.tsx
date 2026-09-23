@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { useAppDialogs } from "@/components/AppDialogs";
 import type { PromptField } from "@/components/AppDialogs";
 import { cn } from "@/lib/utils";
-import type { ActionKey, SectionKey } from "@/lib/permissions";
+import { canItem, type ActionKey, type GranularPerms, type ItemKey, type SectionKey } from "@/lib/permissions";
 
 type Section = "tasks" | "notes" | "costing" | "settings";
 type NotebookId = Id<"notebooks">;
@@ -62,6 +62,11 @@ export default function Dashboard() {
   const canDo = (section: SectionKey, action: ActionKey): boolean => {
     if (myRole === "super") return true;
     return perms?.[section]?.[action] ?? true;
+  };
+  /** Item-level check: can the user do `action` on a specific item? */
+  const canDoItem = (item: ItemKey, action: ActionKey): boolean => {
+    if (myRole === "super") return true;
+    return canItem(myAccess?.permissions as GranularPerms | undefined, item, action);
   };
   const sectionAllowed = (s: Section): boolean => {
     if (s === "settings") return canOpenSettings;
@@ -768,10 +773,11 @@ export default function Dashboard() {
               loading={finishedGoods === undefined}
               view={costingView}
               onSelectView={setCostingView}
-              onNewFg={canDo("costing", "create") ? (p) => void handleNewFg(p) : undefined}
-              onRenameFg={canDo("costing", "edit") ? (fg) => void handleRenameFg(fg) : undefined}
-              onDeleteFg={canDo("costing", "delete") ? (fg) => void handleDeleteFg(fg) : undefined}
+              onNewFg={canDoItem("projects", "create") ? (p) => void handleNewFg(p) : undefined}
+              onRenameFg={canDoItem("products", "edit") ? (fg) => void handleRenameFg(fg) : undefined}
+              onDeleteFg={canDoItem("products", "delete") ? (fg) => void handleDeleteFg(fg) : undefined}
               onMaterialsClick={() => setCostingView({ kind: "materials" })}
+              showMaterials={canDoItem("materials", "view")}
             />
           ) : section === "tasks" ? (
             <TasksSidebar
@@ -781,12 +787,12 @@ export default function Dashboard() {
               loading={taskLists === undefined}
               activeView={activeTaskView}
               onSelectView={setActiveTaskView}
-              onNewList={canDo("tasks", "create") ? handleNewList : undefined}
-              onRenameList={canDo("tasks", "edit") ? handleRenameList : undefined}
-              onDeleteList={canDo("tasks", "delete") ? handleDeleteList : undefined}
+              onNewList={canDoItem("taskLists", "create") ? handleNewList : undefined}
+              onRenameList={canDoItem("taskLists", "edit") ? handleRenameList : undefined}
+              onDeleteList={canDoItem("taskLists", "delete") ? handleDeleteList : undefined}
               onMoveListToFolder={handleMoveListToFolder}
-              onNewFolder={canDo("tasks", "create") ? handleNewFolder : undefined}
-              onDeleteFolder={canDo("tasks", "delete") ? handleDeleteFolder : undefined}
+              onNewFolder={canDoItem("taskFolders", "create") ? handleNewFolder : undefined}
+              onDeleteFolder={canDoItem("taskFolders", "delete") ? handleDeleteFolder : undefined}
             />
           ) : (
             <NotesSidebar
@@ -797,13 +803,13 @@ export default function Dashboard() {
             activePageId={activePage?._id ?? null}
             onSelectNotebook={handleSelectNotebook}
             onSelectPage={handleSelectPage}
-            onNewNotebook={canDo("notes", "create") ? handleNewNotebook : undefined}
-            onNewPage={canDo("notes", "create") ? (nbId) => void handleNewPage(nbId) : undefined}
-            onNewSubPage={canDo("notes", "create") ? (nbId, parentId) => void handleNewPage(nbId, parentId) : undefined}
-            onRenameNotebook={canDo("notes", "edit") ? handleRenameNotebook : undefined}
-            onRenamePage={canDo("notes", "edit") ? handleRenamePage : undefined}
-            onDeleteNotebook={canDo("notes", "delete") ? handleDeleteNotebook : undefined}
-            onDeletePage={canDo("notes", "delete") ? handleDeletePage : undefined}
+            onNewNotebook={canDoItem("notebooks", "create") ? handleNewNotebook : undefined}
+            onNewPage={canDoItem("notePages", "create") ? (nbId) => void handleNewPage(nbId) : undefined}
+            onNewSubPage={canDoItem("notePages", "create") ? (nbId, parentId) => void handleNewPage(nbId, parentId) : undefined}
+            onRenameNotebook={canDoItem("notebooks", "edit") ? handleRenameNotebook : undefined}
+            onRenamePage={canDoItem("notePages", "edit") ? handleRenamePage : undefined}
+            onDeleteNotebook={canDoItem("notebooks", "delete") ? handleDeleteNotebook : undefined}
+            onDeletePage={canDoItem("notePages", "delete") ? handleDeletePage : undefined}
           />
           )}
         </div>
@@ -927,9 +933,15 @@ export default function Dashboard() {
               onNewProduct={(name) => void handleNewFg(name)}
               onEditProject={(p) => void handleEditProject(p)}
               onDeleteProject={(p) => void handleDeleteProject(p)}
-              canCreate={canDo("costing", "create")}
-              canEdit={canDo("costing", "edit")}
-              canDelete={canDo("costing", "delete")}
+              canCreate={canDoItem("products", "create")}
+              canEdit={canDoItem("products", "edit")}
+              canDelete={canDoItem("products", "delete")}
+              canViewMaterials={canDoItem("materials", "view")}
+              canPrint={canDoItem("printing", "view")}
+              canImportExport={canDoItem("dataImport", "create")}
+              canCreateProject={canDoItem("projects", "create")}
+              canEditProject={canDoItem("projects", "edit")}
+              canDeleteProject={canDoItem("projects", "delete")}
             />
           ) : section === "tasks" ? (
             <TasksPanel
@@ -947,8 +959,9 @@ export default function Dashboard() {
               onNewPage={() => handleNewPage()}
               onFlagTask={handleFlagTask}
               tasks={allTasks ?? []}
-              canCreate={canDo("notes", "create")}
-              canEdit={canDo("notes", "edit")}
+              canCreate={canDoItem("notePages", "create")}
+              canEdit={canDoItem("notePages", "edit")}
+              canFlag={canDoItem("flagToTask", "create")}
             />
           )}
         </main>

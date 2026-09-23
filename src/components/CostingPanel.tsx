@@ -59,6 +59,12 @@ export default function CostingPanel({
   canCreate = true,
   canEdit = true,
   canDelete = true,
+  canViewMaterials = true,
+  canPrint = true,
+  canImportExport = true,
+  canCreateProject = true,
+  canEditProject = true,
+  canDeleteProject = true,
 }: {
   materials: MaterialDoc[];
   finishedGoods: FgDoc[];
@@ -75,6 +81,12 @@ export default function CostingPanel({
   canCreate?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  canViewMaterials?: boolean;
+  canPrint?: boolean;
+  canImportExport?: boolean;
+  canCreateProject?: boolean;
+  canEditProject?: boolean;
+  canDeleteProject?: boolean;
 }) {
   const [projectFocus, setProjectFocus] = useState<string | null>(null);
   const addFgItem = useMutation(api.costing.addFgItem);
@@ -495,9 +507,16 @@ export default function CostingPanel({
       )}
 
       {/* ── Views ────────────────────────────────────────────────────── */}
-      {view?.kind === "materials" ? (
+      {view?.kind === "materials" && canViewMaterials ? (
         <div className="mt-4">
-          <MaterialsSheet materials={materials} loading={materials === undefined} />
+          <MaterialsSheet
+            materials={materials}
+            loading={materials === undefined}
+            canCreate={canCreate}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            canImportExport={canImportExport}
+          />
         </div>
       ) : view?.kind === "projects" ? (
         <div className="mt-4">
@@ -508,13 +527,15 @@ export default function CostingPanel({
               setProjectFocus(name);
               onSelectView({ kind: "products" });
             }}
-            onNewProject={canCreate ? () => onNewFg("new") : undefined}
+            onNewProject={
+              canCreateProject ? () => onNewFg("new") : undefined
+            }
             onNewProduct={
               canCreate ? (name) => onNewProduct?.(name) : undefined
             }
-            onEditProject={canEdit ? onEditProject : undefined}
+            onEditProject={canEditProject ? onEditProject : undefined}
             onDeleteProject={
-              canDelete ? (p) => onDeleteProject?.(p) : undefined
+              canDeleteProject ? (p) => onDeleteProject?.(p) : undefined
             }
           />
         </div>
@@ -905,6 +926,7 @@ export default function CostingPanel({
                 <Download className="size-3.5" />
                 Export CSV
               </Button>
+              {canPrint && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -936,6 +958,7 @@ export default function CostingPanel({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
             </div>
           )}
         </>

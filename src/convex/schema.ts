@@ -29,10 +29,25 @@ export const sectionPermissionsValidator = v.object({
   edit: v.optional(v.boolean()),
   delete: v.optional(v.boolean()),
 });
+/** Item-level permissions: finer control inside a section. */
+export const itemPermissionsValidator = v.object({
+  taskLists: v.optional(sectionPermissionsValidator),
+  taskFolders: v.optional(sectionPermissionsValidator),
+  taskSteps: v.optional(sectionPermissionsValidator),
+  notebooks: v.optional(sectionPermissionsValidator),
+  notePages: v.optional(sectionPermissionsValidator),
+  flagToTask: v.optional(sectionPermissionsValidator),
+  materials: v.optional(sectionPermissionsValidator),
+  dataImport: v.optional(sectionPermissionsValidator),
+  products: v.optional(sectionPermissionsValidator),
+  projects: v.optional(sectionPermissionsValidator),
+  printing: v.optional(sectionPermissionsValidator),
+});
 export const permissionsValidator = v.object({
   tasks: v.optional(sectionPermissionsValidator),
   notes: v.optional(sectionPermissionsValidator),
   costing: v.optional(sectionPermissionsValidator),
+  items: v.optional(itemPermissionsValidator),
 });
 export type Permissions = Infer<typeof permissionsValidator>;
 
