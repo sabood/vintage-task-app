@@ -549,6 +549,9 @@ export default function CostingPanel({
             onDeleteProject={
               canDeleteProject ? (p) => onDeleteProject?.(p) : undefined
             }
+            canCreateTask={canCreateProject}
+            canEditTask={canEditProject}
+            canDeleteTask={canDeleteProject}
           />
         </div>
       ) : view?.kind === "fg" && activeFg ? (

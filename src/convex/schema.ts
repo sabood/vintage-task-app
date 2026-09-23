@@ -291,6 +291,35 @@ const schema = defineSchema(
       budget: v.optional(v.number()), // planned budget
     }).index("by_owner", ["ownerId"]),
 
+    // production tasks — a job under a project that builds its FG products
+    productionTasks: defineTable({
+      ownerId: v.id("users"),
+      projectName: v.string(), // the project this task runs under
+      name: v.string(), // e.g. "Batch 3 — chairs"
+      code: v.optional(v.string()), // auto code, e.g. PT0001
+      note: v.optional(v.string()), // instructions for the run
+      assignee: v.optional(v.string()), // who is making it
+      dueAt: v.optional(v.number()), // target finish timestamp (ms)
+      status: v.optional(
+        v.union(
+          v.literal("open"),
+          v.literal("in_progress"),
+          v.literal("finished"),
+        ),
+      ),
+      finishedAt: v.optional(v.number()), // when production was completed
+      // the products this task builds: FG product, planned qty, qty produced
+      items: v.array(
+        v.object({
+          fgId: v.id("finishedGoods"),
+          qty: v.number(),
+          doneQty: v.number(),
+        }),
+      ),
+    })
+      .index("by_owner", ["ownerId"])
+      .index("by_project", ["projectName"]),
+
     // one line inside a costing sheet
     costingItems: defineTable({
       ownerId: v.id("users"),
