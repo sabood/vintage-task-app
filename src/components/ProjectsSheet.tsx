@@ -2,6 +2,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import {
+  ClipboardList,
   Download,
   Folder,
   Loader2,
@@ -13,6 +14,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
+import ProductionTasks from "@/components/ProductionTasks";
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { toast } from "sonner";
@@ -95,6 +97,9 @@ export default function ProjectsSheet({
   onNewProduct,
   onEditProject,
   onDeleteProject,
+  canCreateTask = false,
+  canEditTask = false,
+  canDeleteTask = false,
 }: {
   finishedGoods: FgDoc[];
   loading: boolean;
@@ -103,8 +108,13 @@ export default function ProjectsSheet({
   onNewProduct?: (projectName: string) => void;
   onEditProject?: (project: ProjectDoc) => void;
   onDeleteProject?: (project: ProjectDoc) => void;
+  canCreateTask?: boolean;
+  canEditTask?: boolean;
+  canDeleteTask?: boolean;
 }) {
   const [search, setSearch] = useState("");
+  /** Which rows show their production tasks. */
+  const [tasksOpen, setTasksOpen] = useState<Record<string, boolean>>({});
   const projects = useQuery(api.costing.listProjects);
   const allItems = useQuery(api.costing.listAllItems);
 
@@ -354,6 +364,26 @@ export default function ProjectsSheet({
 
                     {/* actions */}
                     <span className="ml-auto flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        aria-expanded={tasksOpen[p.key] ?? false}
+                        aria-label={`Production tasks of “${p.name}”`}
+                        title="Production tasks"
+                        className={cn(
+                          "grid size-6 cursor-pointer place-items-center rounded-md transition-colors",
+                          tasksOpen[p.key]
+                            ? "text-primary"
+                            : "text-muted-foreground hover:text-primary",
+                        )}
+                        onClick={() =>
+                          setTasksOpen((open) => ({
+                            ...open,
+                            [p.key]: !open[p.key],
+                          }))
+                        }
+                      >
+                        <ClipboardList className="size-3.5" />
+                      </button>
                       <span className="hidden items-center gap-1 text-xs tabular-nums text-muted-foreground group-hover/row:inline-flex sm:inline-flex">
                         {detail?.budget !== undefined && (
                           <span
@@ -442,6 +472,19 @@ export default function ProjectsSheet({
                       )}
                     </p>
                   )}
+
+                  {/* production tasks planned under this project */}
+                  {tasksOpen[p.key] && (
+                    <ProductionTasks
+                      projectName={p.name}
+                      products={finishedGoods.filter(
+                        (fg) => fg.projectName === p.name,
+                      )}
+                      canCreate={canCreateTask}
+                      canEdit={canEditTask}
+                      canDelete={canDeleteTask}
+                    />
+                  )}
                 </li>
               );
             })}
@@ -462,7 +505,8 @@ export default function ProjectsSheet({
 
       <p className="mt-3 text-xs text-muted-foreground">
         A project groups finished goods — its cost and total are the sum of all
-        its products. Click a project name to see its products.
+        its products. Click a project name to see its products, or the clipboard
+        icon to plan the production tasks that make them.
       </p>
     </div>
   );
