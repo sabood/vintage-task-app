@@ -53,6 +53,7 @@ export default function CostingPanel({
   onRenameFg,
   onDeleteFg,
   onEditFg,
+  onNewProduct,
   onEditProject,
   onDeleteProject,
   canCreate = true,
@@ -68,6 +69,7 @@ export default function CostingPanel({
   onRenameFg: (fg: FgDoc) => void;
   onDeleteFg: (fg: FgDoc) => void;
   onEditFg: (fg: FgDoc) => void;
+  onNewProduct?: (projectName: string) => void;
   onEditProject?: (project: Doc<"projects">) => void;
   onDeleteProject?: (project: Doc<"projects">) => void;
   canCreate?: boolean;
@@ -507,6 +509,9 @@ export default function CostingPanel({
               onSelectView({ kind: "products" });
             }}
             onNewProject={canCreate ? () => onNewFg("new") : undefined}
+            onNewProduct={
+              canCreate ? (name) => onNewProduct?.(name) : undefined
+            }
             onEditProject={canEdit ? onEditProject : undefined}
             onDeleteProject={
               canDelete ? (p) => onDeleteProject?.(p) : undefined

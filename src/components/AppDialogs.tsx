@@ -55,6 +55,8 @@ export type PromptField = {
   initial?: string;
   type?: "text" | "number" | "date";
   required?: boolean;
+  /** Span the full dialog width (useful in 2-column layouts). */
+  full?: boolean;
   /** Overrides the field-level error message. */
   validate?: (value: string) => string | null;
 };
@@ -342,7 +344,7 @@ function DialogSurface({
               )}
             >
               {fields.map((f) => (
-                <div key={f.key}>
+                <div key={f.key} className={cn(f.full && "sm:col-span-2")}>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">
                     {f.label}
                     {f.required && <span className="text-destructive"> *</span>}

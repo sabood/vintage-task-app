@@ -454,7 +454,13 @@ export default function Dashboard() {
     { key: "status", label: "Status", initial: initial?.status ?? "planning" },
     { key: "priority", label: "Priority (high / medium / low)", initial: initial?.priority ?? "medium" },
     { key: "budget", label: "Budget (optional)", type: "number", initial: initial?.budget },
-    { key: "description", label: "Description (optional)", initial: initial?.description },
+    {
+      key: "description",
+      label: "Description (optional)",
+      placeholder: "Scope, deliverables, notes…",
+      initial: initial?.description,
+      full: true,
+    },
   ];
 
   const submitProjectFields = async (
@@ -918,6 +924,7 @@ export default function Dashboard() {
               onRenameFg={(fg) => void handleRenameFg(fg)}
               onDeleteFg={(fg) => void handleDeleteFg(fg)}
               onEditFg={(fg) => void handleEditFg(fg)}
+              onNewProduct={(name) => void handleNewFg(name)}
               onEditProject={(p) => void handleEditProject(p)}
               onDeleteProject={(p) => void handleDeleteProject(p)}
               canCreate={canDo("costing", "create")}

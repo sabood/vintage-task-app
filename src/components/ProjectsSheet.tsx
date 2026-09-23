@@ -92,6 +92,7 @@ export default function ProjectsSheet({
   loading,
   onOpenProject,
   onNewProject,
+  onNewProduct,
   onEditProject,
   onDeleteProject,
 }: {
@@ -99,6 +100,7 @@ export default function ProjectsSheet({
   loading: boolean;
   onOpenProject: (projectName: string) => void;
   onNewProject?: () => void;
+  onNewProduct?: (projectName: string) => void;
   onEditProject?: (project: ProjectDoc) => void;
   onDeleteProject?: (project: ProjectDoc) => void;
 }) {
@@ -405,13 +407,13 @@ export default function ProjectsSheet({
                       >
                         <Package className="size-3.5" />
                       </button>
-                      {onNewProject && (
+                      {onNewProduct && (
                         <button
                           type="button"
                           aria-label={`New product under “${p.name}”`}
                           title="New product under this project"
                           className="grid size-6 place-items-center rounded-md text-muted-foreground hover:text-primary"
-                          onClick={() => onNewProject()}
+                          onClick={() => onNewProduct(p.name)}
                         >
                           <Sigma className="size-3.5" />
                         </button>
